@@ -181,10 +181,12 @@ function Index() {
                 return (
                   <button
                     key={s.id}
+                    role="tab"
+                    aria-selected={active}
                     onClick={() => {
                       setScenarioId(s.id);
                       setCustomPrompt("");
-                      reset();
+                      run({ fast: true });
                     }}
                     className={`w-full text-left rounded-lg border px-4 py-3 transition ${
                       active
