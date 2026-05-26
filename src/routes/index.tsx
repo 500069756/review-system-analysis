@@ -128,18 +128,20 @@ function Index() {
     setRunning(false);
   };
 
-  const run = () => {
+  const run = (opts?: { fast?: boolean }) => {
     reset();
     setRunning(true);
+    const stepDelay = opts?.fast ? 180 : 700;
+    const startDelay = opts?.fast ? 120 : 450;
     const steps = [0, 1, 2, 3, 4];
     steps.forEach((i) => {
-      const t = window.setTimeout(() => setStage(i), 450 + i * 700);
+      const t = window.setTimeout(() => setStage(i), startDelay + i * stepDelay);
       timers.current.push(t);
     });
     const tEnd = window.setTimeout(() => {
       setDone(true);
       setRunning(false);
-    }, 450 + steps.length * 700);
+    }, startDelay + steps.length * stepDelay);
     timers.current.push(tEnd);
   };
 
