@@ -287,7 +287,15 @@ function Index() {
                 disabled={running}
                 className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
               >
-                {running ? "Evaluating…" : done ? "Re-run evaluation" : "Run trust layer"}
+                {running
+                  ? customPrompt.trim()
+                    ? "Asking AI…"
+                    : "Evaluating…"
+                  : done
+                  ? "Re-run evaluation"
+                  : customPrompt.trim()
+                  ? "Evaluate with AI"
+                  : "Run trust layer"}
               </button>
               {done && (
                 <button
@@ -299,9 +307,15 @@ function Index() {
               )}
             </div>
 
+            {error && (
+              <div className="mt-4 rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">
+                {error}
+              </div>
+            )}
+
             <div className="mt-6 rounded-lg border border-dashed border-border bg-background/40 p-4">
               <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                Active prompt
+                Active prompt {customPrompt.trim() && "· live AI"}
               </p>
               <p className="mt-1 font-mono text-sm">
                 {customPrompt || scenario.prompt}
@@ -311,12 +325,29 @@ function Index() {
 
           {/* Pipeline panel */}
           <div className="rounded-xl border border-border bg-card p-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              02 — Evaluation Pipeline
-            </p>
-            <h2 className="mt-2 font-display text-3xl leading-tight">
-              Five layers, one verdict.
-            </h2>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  02 — Evaluation Pipeline
+                </p>
+                <h2 className="mt-2 font-display text-3xl leading-tight">
+                  Five layers, one verdict.
+                </h2>
+              </div>
+              {done && (
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                    Accuracy
+                  </p>
+                  <p className={`font-display text-4xl leading-none ${riskColor}`}>
+                    {confidence}%
+                  </p>
+                  <p className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                    5/5 layers evaluated
+                  </p>
+                </div>
+              )}
+            </div>
 
             <ol className="mt-6 space-y-3">
               <PipelineStep idx={0} stage={stage} title="Primary AI response" desc="Generate the candidate answer." />
