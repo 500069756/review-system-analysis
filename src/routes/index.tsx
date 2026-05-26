@@ -105,18 +105,51 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
+type EvalResult = {
+  primary: string;
+  category: string;
+  risk: RiskLevel;
+  confidence: number;
+  models: Scenario["models"];
+  evidence: Scenario["evidence"];
+  reasoningGaps: string[];
+  warnings: string[];
+};
+
 function Index() {
   const [scenarioId, setScenarioId] = useState<string>(SCENARIOS[0].id);
   const [customPrompt, setCustomPrompt] = useState("");
   const [running, setRunning] = useState(false);
   const [stage, setStage] = useState<number>(-1);
   const [done, setDone] = useState(false);
+  const [liveResult, setLiveResult] = useState<EvalResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const timers = useRef<number[]>([]);
 
-  const scenario = useMemo(
+  const baseScenario = useMemo(
     () => SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0],
     [scenarioId],
   );
+
+  // Active data: live AI result if custom prompt was run, else the scenario.
+  const scenario: Scenario & { confidence?: number } = useMemo(() => {
+    if (liveResult) {
+      return {
+        id: "live",
+        label: "Custom prompt",
+        prompt: customPrompt,
+        risk: liveResult.risk,
+        category: liveResult.category,
+        primary: liveResult.primary,
+        models: liveResult.models,
+        evidence: liveResult.evidence,
+        reasoningGaps: liveResult.reasoningGaps,
+        warnings: liveResult.warnings,
+        confidence: liveResult.confidence,
+      };
+    }
+    return baseScenario;
+  }, [liveResult, baseScenario, customPrompt]);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -126,11 +159,10 @@ function Index() {
     setStage(-1);
     setDone(false);
     setRunning(false);
+    setError(null);
   };
 
-  const run = (opts?: { fast?: boolean }) => {
-    reset();
-    setRunning(true);
+  const animatePipeline = (opts?: { fast?: boolean }, onDone?: () => void) => {
     const stepDelay = opts?.fast ? 180 : 700;
     const startDelay = opts?.fast ? 120 : 450;
     const steps = [0, 1, 2, 3, 4];
@@ -141,11 +173,41 @@ function Index() {
     const tEnd = window.setTimeout(() => {
       setDone(true);
       setRunning(false);
+      onDone?.();
     }, startDelay + steps.length * stepDelay);
     timers.current.push(tEnd);
   };
 
+  const run = async (opts?: { fast?: boolean }) => {
+    reset();
+    setRunning(true);
+    setLiveResult(null);
+
+    const trimmed = customPrompt.trim();
+    if (!trimmed) {
+      // Scenario mode — purely visual animation, scripted result.
+      animatePipeline(opts);
+      return;
+    }
+
+    // Custom prompt mode — call AI gateway in parallel with animation.
+    animatePipeline();
+    try {
+      const res = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Evaluation failed");
+      setLiveResult(data as EvalResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Evaluation failed");
+    }
+  };
+
   const confidence = useMemo(() => {
+    if (scenario.confidence != null) return Math.round(scenario.confidence);
     const base =
       scenario.risk === "high" ? 38 : scenario.risk === "medium" ? 64 : 82;
     const dissent = scenario.models.filter((m) => m.stance !== "agree").length;
