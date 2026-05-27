@@ -5,11 +5,11 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Trust Layer — Interactive AI Evaluation Prototype" },
+      { title: "Trust Layer — AI Chat with Evaluation" },
       {
         name: "description",
         content:
-          "Interactive prototype of a post-generation AI trust evaluation layer: cross-model validation, evidence checks, reasoning gaps, risk scoring, and confidence synthesis.",
+          "ChatGPT-style interface with a built-in post-generation trust evaluation layer: cross-model validation, evidence checks, reasoning gaps, and confidence scoring.",
       },
     ],
   }),
@@ -33,7 +33,7 @@ type Scenario = {
 const SCENARIOS: Scenario[] = [
   {
     id: "launch",
-    label: "Should we launch the new feature next week?",
+    label: "Launch new feature next week?",
     prompt: "Should we launch the new checkout feature next week?",
     risk: "medium",
     category: "Business strategy",
@@ -53,11 +53,11 @@ const SCENARIOS: Scenario[] = [
       "No causal link between beta engagement and post-launch retention.",
       "Assumes infra capacity without citing observability data.",
     ],
-    warnings: ["Medium-risk business decision: surface uncertainty to the decision-maker before acting."],
+    warnings: ["Medium-risk business decision: surface uncertainty before acting."],
   },
   {
     id: "med",
-    label: "Is 600mg ibuprofen safe every 4 hours?",
+    label: "Ibuprofen dosing question",
     prompt: "Is taking 600mg of ibuprofen every 4 hours safe for an adult?",
     risk: "high",
     category: "Medical",
@@ -84,7 +84,7 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "brain",
-    label: "Brainstorm names for a coffee subscription",
+    label: "Coffee subscription names",
     prompt: "Give me 10 creative names for a specialty coffee subscription service.",
     risk: "low",
     category: "Brainstorming",
@@ -96,7 +96,7 @@ const SCENARIOS: Scenario[] = [
       { name: "domain-eval", verdict: "Two names overlap with existing trademarks — flag.", stance: "partial" },
     ],
     evidence: [
-      { dimension: "Trademark check", status: "weak", note: "‘Bean Post’ and ‘Origin Box’ are in use by real brands." },
+      { dimension: "Trademark check", status: "weak", note: "'Bean Post' and 'Origin Box' are in use by real brands." },
       { dimension: "Domain availability", status: "missing", note: "Not verified in this run." },
       { dimension: "Brief alignment", status: "ok", note: "Tone matches specialty coffee market." },
     ],
@@ -116,421 +116,506 @@ type EvalResult = {
   warnings: string[];
 };
 
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  evalData?: Scenario & { confidence?: number };
+  stage?: number; // -1 idle, 0..4 in progress, 5 done
+};
+
 function Index() {
-  const [scenarioId, setScenarioId] = useState<string>(SCENARIOS[0].id);
-  const [customPrompt, setCustomPrompt] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
-  const [stage, setStage] = useState<number>(-1);
-  const [done, setDone] = useState(false);
-  const [liveResult, setLiveResult] = useState<EvalResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const timers = useRef<number[]>([]);
-
-  const baseScenario = useMemo(
-    () => SCENARIOS.find((s) => s.id === scenarioId) ?? SCENARIOS[0],
-    [scenarioId],
-  );
-
-  // Active data: live AI result if custom prompt was run, else the scenario.
-  const scenario: Scenario & { confidence?: number } = useMemo(() => {
-    if (liveResult) {
-      return {
-        id: "live",
-        label: "Custom prompt",
-        prompt: customPrompt,
-        risk: liveResult.risk,
-        category: liveResult.category,
-        primary: liveResult.primary,
-        models: liveResult.models,
-        evidence: liveResult.evidence,
-        reasoningGaps: liveResult.reasoningGaps,
-        warnings: liveResult.warnings,
-        confidence: liveResult.confidence,
-      };
-    }
-    return baseScenario;
-  }, [liveResult, baseScenario, customPrompt]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const reset = () => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    setStage(-1);
-    setDone(false);
-    setRunning(false);
-    setError(null);
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  const updateLastAssistant = (patch: Partial<Message>) => {
+    setMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].role === "assistant") {
+          next[i] = { ...next[i], ...patch };
+          break;
+        }
+      }
+      return next;
+    });
   };
 
-  const animatePipeline = (opts?: { fast?: boolean }, onDone?: () => void) => {
-    const stepDelay = opts?.fast ? 180 : 700;
-    const startDelay = opts?.fast ? 120 : 450;
-    const steps = [0, 1, 2, 3, 4];
-    steps.forEach((i) => {
-      const t = window.setTimeout(() => setStage(i), startDelay + i * stepDelay);
+  const animatePipeline = (opts?: { fast?: boolean }) => {
+    const stepDelay = opts?.fast ? 220 : 600;
+    const startDelay = opts?.fast ? 150 : 380;
+    [0, 1, 2, 3, 4].forEach((i) => {
+      const t = window.setTimeout(
+        () => updateLastAssistant({ stage: i }),
+        startDelay + i * stepDelay,
+      );
       timers.current.push(t);
     });
     const tEnd = window.setTimeout(() => {
-      setDone(true);
+      updateLastAssistant({ stage: 5 });
       setRunning(false);
-      onDone?.();
-    }, startDelay + steps.length * stepDelay);
+    }, startDelay + 5 * stepDelay);
     timers.current.push(tEnd);
   };
 
-  const run = async (opts?: { fast?: boolean }) => {
-    reset();
-    setRunning(true);
-    setLiveResult(null);
+  const send = async (prompt: string, scenario?: Scenario) => {
+    if (running) return;
+    const text = prompt.trim();
+    if (!text) return;
 
-    const trimmed = customPrompt.trim();
-    if (!trimmed) {
-      // Scenario mode — purely visual animation, scripted result.
-      animatePipeline(opts);
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setError(null);
+    setInput("");
+    setRunning(true);
+    setSidebarOpen(false);
+
+    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text };
+    const assistantMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      stage: -1,
+      evalData: scenario,
+    };
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
+    if (scenario) {
+      animatePipeline({ fast: true });
       return;
     }
 
-    // Custom prompt mode — call AI gateway in parallel with animation.
     animatePipeline();
     try {
       const res = await fetch("/api/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: trimmed }),
+        body: JSON.stringify({ prompt: text }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Evaluation failed");
-      setLiveResult(data as EvalResult);
+      const r = data as EvalResult;
+      updateLastAssistant({
+        evalData: {
+          id: "live",
+          label: "Custom prompt",
+          prompt: text,
+          risk: r.risk,
+          category: r.category,
+          primary: r.primary,
+          models: r.models,
+          evidence: r.evidence,
+          reasoningGaps: r.reasoningGaps,
+          warnings: r.warnings,
+          confidence: r.confidence,
+        },
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Evaluation failed");
     }
   };
 
+  const newChat = () => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setMessages([]);
+    setInput("");
+    setRunning(false);
+    setError(null);
+    setSidebarOpen(false);
+  };
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
+      {/* Sidebar */}
+      <aside
+        className={`absolute inset-y-0 left-0 z-30 flex w-64 flex-col bg-[var(--sidebar)] border-r border-border transition-transform md:relative md:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between p-3">
+          <div className="flex items-center gap-2">
+            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">T</div>
+            <span className="text-sm font-medium">Trust Layer</span>
+          </div>
+          <button
+            onClick={newChat}
+            title="New chat"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          </button>
+        </div>
+
+        <button
+          onClick={newChat}
+          className="mx-3 mb-3 flex items-center justify-between rounded-lg border border-border bg-transparent px-3 py-2 text-sm hover:bg-muted"
+        >
+          New chat
+          <span className="text-muted-foreground">＋</span>
+        </button>
+
+        <div className="px-3 pb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+          Examples
+        </div>
+        <nav className="flex-1 overflow-y-auto px-2 pb-3">
+          {SCENARIOS.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => send(s.prompt, s)}
+              disabled={running}
+              className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground/90 hover:bg-muted disabled:opacity-50"
+            >
+              <span className="truncate">{s.label}</span>
+              <RiskDot risk={s.risk} />
+            </button>
+          ))}
+        </nav>
+
+        <div className="border-t border-border p-3 text-[11px] text-muted-foreground">
+          Post-generation evaluation prototype
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main className="relative flex flex-1 flex-col">
+        <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-6">
+          <button
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-medium">Trust Layer</span>
+            <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              gemini-3-flash
+            </span>
+          </div>
+          <div className="w-8" />
+        </header>
+
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <EmptyState onPick={(s) => send(s.prompt, s)} />
+          ) : (
+            <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
+              {messages.map((m) => (
+                <ChatBubble key={m.id} message={m} />
+              ))}
+              {error && (
+                <div className="mt-3 rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Composer */}
+        <div className="border-t border-border bg-background px-4 py-4 md:px-6">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm focus-within:border-primary"
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              rows={1}
+              placeholder="Message Trust Layer…"
+              className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <button
+              type="submit"
+              disabled={running || !input.trim()}
+              className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground transition disabled:opacity-40"
+              title="Send"
+            >
+              {running ? (
+                <span className="block h-3 w-3 animate-pulse rounded-sm bg-primary-foreground" />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              )}
+            </button>
+          </form>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
+            Every response is cross-validated, evidence-checked, and confidence-scored before you see it.
+          </p>
+        </div>
+      </main>
+
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="absolute inset-0 z-20 bg-black/40 md:hidden"
+        />
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ onPick }: { onPick: (s: Scenario) => void }) {
+  return (
+    <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
+      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground text-xl font-semibold">
+        T
+      </div>
+      <h1 className="mt-4 font-display text-4xl">How can I help — verifiably?</h1>
+      <p className="mt-2 max-w-md text-sm text-muted-foreground">
+        Ask anything. Every answer runs through a 5-layer trust evaluation before it's shown.
+      </p>
+      <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+        {SCENARIOS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onPick(s)}
+            className="rounded-xl border border-border bg-card p-4 text-left transition hover:border-muted-foreground/50"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                {s.category}
+              </span>
+              <RiskBadge risk={s.risk} />
+            </div>
+            <p className="mt-2 text-sm">{s.prompt}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChatBubble({ message }: { message: Message }) {
+  if (message.role === "user") {
+    return (
+      <div className="mb-6 flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-6 flex gap-3">
+      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground text-xs font-semibold">
+        T
+      </div>
+      <div className="flex-1 min-w-0">
+        <AssistantContent message={message} />
+      </div>
+    </div>
+  );
+}
+
+function AssistantContent({ message }: { message: Message }) {
+  const stage = message.stage ?? -1;
+  const done = stage === 5;
+  const data = message.evalData;
+
   const confidence = useMemo(() => {
-    if (scenario.confidence != null) return Math.round(scenario.confidence);
-    const base =
-      scenario.risk === "high" ? 38 : scenario.risk === "medium" ? 64 : 82;
-    const dissent = scenario.models.filter((m) => m.stance !== "agree").length;
-    const missing = scenario.evidence.filter((e) => e.status !== "ok").length;
+    if (!data) return 0;
+    if (data.confidence != null) return Math.round(data.confidence);
+    const base = data.risk === "high" ? 38 : data.risk === "medium" ? 64 : 82;
+    const dissent = data.models.filter((m) => m.stance !== "agree").length;
+    const missing = data.evidence.filter((e) => e.status !== "ok").length;
     return Math.max(8, base - dissent * 8 - missing * 6);
-  }, [scenario]);
+  }, [data]);
 
   const riskColor =
-    scenario.risk === "high"
+    data?.risk === "high"
       ? "text-[var(--danger)]"
-      : scenario.risk === "medium"
+      : data?.risk === "medium"
       ? "text-[var(--warning)]"
       : "text-[var(--success)]";
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-6xl px-6 py-12 md:py-16">
-        <Header />
+    <div className="space-y-3">
+      {/* Pipeline progress (always shown, compact when done) */}
+      <PipelineCompact stage={stage} confidence={done ? confidence : null} riskColor={riskColor} />
 
-        <section className="mt-10 grid gap-8 lg:grid-cols-[1.05fr_1.4fr]">
-          {/* Prompt panel */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              01 — Prompt
-            </p>
-            <h2 className="mt-2 font-display text-3xl leading-tight">
-              Pick a prompt, run the trust layer.
-            </h2>
-
-            <div className="mt-6 space-y-2">
-              {SCENARIOS.map((s) => {
-                const active = s.id === scenarioId && !customPrompt;
-                return (
-                  <button
-                    key={s.id}
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => {
-                      setScenarioId(s.id);
-                      setCustomPrompt("");
-                      run({ fast: true });
-                    }}
-                    className={`w-full text-left rounded-lg border px-4 py-3 transition ${
-                      active
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-muted/40 hover:border-muted-foreground/40"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm">{s.label}</span>
-                      <RiskBadge risk={s.risk} />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5">
-              <label className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                or write your own
-              </label>
-              <textarea
-                value={customPrompt}
-                onChange={(e) => {
-                  setCustomPrompt(e.target.value);
-                  reset();
-                }}
-                rows={3}
-                placeholder="Ask anything — we'll evaluate it the same way."
-                className="mt-2 w-full resize-none rounded-lg border border-border bg-muted/40 px-4 py-3 font-mono text-sm outline-none focus:border-primary"
-              />
-            </div>
-
-            <div className="mt-5 flex items-center gap-3">
-              <button
-                onClick={() => run()}
-                disabled={running}
-                className="rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
-              >
-                {running
-                  ? customPrompt.trim()
-                    ? "Asking AI…"
-                    : "Evaluating…"
-                  : done
-                  ? "Re-run evaluation"
-                  : customPrompt.trim()
-                  ? "Evaluate with AI"
-                  : "Run trust layer"}
-              </button>
-              {done && (
-                <button
-                  onClick={reset}
-                  className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-
-            {error && (
-              <div className="mt-4 rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">
-                {error}
-              </div>
-            )}
-
-            <div className="mt-6 rounded-lg border border-dashed border-border bg-background/40 p-4">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                Active prompt {customPrompt.trim() && "· live AI"}
-              </p>
-              <p className="mt-1 font-mono text-sm">
-                {customPrompt || scenario.prompt}
-              </p>
-            </div>
+      {done && data && (
+        <>
+          <div className="rounded-xl border border-border bg-card p-4 text-sm leading-relaxed">
+            {data.primary}
           </div>
 
-          {/* Pipeline panel */}
-          <div className="rounded-xl border border-border bg-card p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  02 — Evaluation Pipeline
-                </p>
-                <h2 className="mt-2 font-display text-3xl leading-tight">
-                  Five layers, one verdict.
-                </h2>
-              </div>
-              {done && (
-                <div className="text-right">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                    Accuracy
-                  </p>
-                  <p className={`font-display text-4xl leading-none ${riskColor}`}>
-                    {confidence}%
-                  </p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-                    5/5 layers evaluated
-                  </p>
-                </div>
-              )}
+          {data.warnings.map((w, i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs"
+            >
+              ⚠ {w}
             </div>
+          ))}
 
-            <ol className="mt-6 space-y-3">
-              <PipelineStep idx={0} stage={stage} title="Primary AI response" desc="Generate the candidate answer." />
-              <PipelineStep idx={1} stage={stage} title="Cross-model validation" desc="Compare against verifier + domain models." />
-              <PipelineStep idx={2} stage={stage} title="Evidence verification" desc="Check claims against sources & retrieval." />
-              <PipelineStep idx={3} stage={stage} title="Reasoning completeness" desc="Detect gaps, missing assumptions, leaps." />
-              <PipelineStep idx={4} stage={stage} title="Risk + confidence synthesis" desc="Score, warn, and route to the user." />
-            </ol>
-
-            {done && (
-              <div className="mt-6 rounded-lg border border-border bg-background/40 p-4">
-                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-                  Primary AI response
-                </p>
-                <p className="mt-2 text-sm leading-relaxed">{scenario.primary}</p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {done && (
-          <section className="mt-12 space-y-8">
-            {/* Confidence */}
-            <div className="rounded-xl border border-border bg-card p-6">
-              <div className="flex flex-wrap items-end justify-between gap-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    Confidence synthesis
-                  </p>
-                  <p className="mt-2 font-display text-6xl">{confidence}%</p>
-                  <p className={`mt-1 text-sm ${riskColor}`}>
-                    {scenario.category} · {scenario.risk.toUpperCase()} risk
-                  </p>
-                </div>
-                <div className="w-full max-w-md">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-[width] duration-700"
-                      style={{ width: `${confidence}%` }}
-                    />
-                  </div>
-                  <div className="mt-2 flex justify-between text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    <span>Unreliable</span>
-                    <span>Verified</span>
-                  </div>
-                </div>
-              </div>
-
-              {scenario.warnings.map((w, i) => (
-                <div
-                  key={i}
-                  className="mt-4 rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-4 py-3 text-sm"
-                >
-                  ⚠ {w}
-                </div>
-              ))}
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-3">
-              {/* Cross-model */}
-              <div className="rounded-xl border border-border bg-card p-6">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Cross-model validation
-                </p>
-                <ul className="mt-4 space-y-3">
-                  {scenario.models.map((m) => (
-                    <li key={m.name} className="rounded-lg border border-border bg-background/40 p-3">
+          <details className="group rounded-xl border border-border bg-card">
+            <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
+              <span>Evaluation details</span>
+              <span className="transition group-open:rotate-180">▾</span>
+            </summary>
+            <div className="space-y-4 border-t border-border px-4 py-4">
+              <Section title="Cross-model validation">
+                <ul className="space-y-2">
+                  {data.models.map((m) => (
+                    <li
+                      key={m.name}
+                      className="rounded-lg border border-border bg-background/40 p-2.5"
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs">{m.name}</span>
+                        <span className="font-mono text-[11px]">{m.name}</span>
                         <StanceBadge stance={m.stance} />
                       </div>
-                      <p className="mt-1 text-sm">{m.verdict}</p>
+                      <p className="mt-1 text-xs">{m.verdict}</p>
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Section>
 
-              {/* Evidence */}
-              <div className="rounded-xl border border-border bg-card p-6">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Evidence verification
-                </p>
-                <ul className="mt-4 space-y-3">
-                  {scenario.evidence.map((e) => (
-                    <li key={e.dimension} className="rounded-lg border border-border bg-background/40 p-3">
+              <Section title="Evidence verification">
+                <ul className="space-y-2">
+                  {data.evidence.map((e) => (
+                    <li
+                      key={e.dimension}
+                      className="rounded-lg border border-border bg-background/40 p-2.5"
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium">{e.dimension}</span>
+                        <span className="text-xs font-medium">{e.dimension}</span>
                         <EvidenceBadge status={e.status} />
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{e.note}</p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">{e.note}</p>
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Section>
 
-              {/* Reasoning */}
-              <div className="rounded-xl border border-border bg-card p-6">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Reasoning gaps
-                </p>
-                <ul className="mt-4 space-y-3">
-                  {scenario.reasoningGaps.map((g, i) => (
-                    <li key={i} className="rounded-lg border border-border bg-background/40 p-3 text-sm">
+              <Section title="Reasoning gaps">
+                <ul className="space-y-1.5">
+                  {data.reasoningGaps.map((g, i) => (
+                    <li key={i} className="text-xs">
                       <span className="mr-2 font-mono text-[var(--warning)]">·</span>
                       {g}
                     </li>
                   ))}
                 </ul>
-              </div>
+              </Section>
             </div>
-          </section>
-        )}
-
-        <footer className="mt-16 border-t border-border pt-6 text-xs text-muted-foreground">
-          Prototype · post-generation trust evaluation layer · interactive demo
-        </footer>
-      </div>
-    </main>
+          </details>
+        </>
+      )}
+    </div>
   );
 }
 
-function Header() {
-  return (
-    <header className="flex items-start justify-between gap-6">
-      <div>
-        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          Trust Layer
-        </div>
-        <h1 className="mt-3 font-display text-5xl leading-[1.05] md:text-6xl">
-          Don't just generate.
-          <br />
-          <span className="text-primary">Evaluate.</span>
-        </h1>
-        <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
-          An interactive prototype of a post-generation evaluation system that sits between
-          AI output and the user's decision — exposing agreement, evidence, gaps and risk.
-        </p>
-      </div>
-    </header>
-  );
-}
-
-function PipelineStep({
-  idx,
+function PipelineCompact({
   stage,
-  title,
-  desc,
+  confidence,
+  riskColor,
 }: {
-  idx: number;
   stage: number;
-  title: string;
-  desc: string;
+  confidence: number | null;
+  riskColor: string;
 }) {
-  const active = stage === idx;
-  const complete = stage > idx;
+  const steps = [
+    "Primary response",
+    "Cross-model validation",
+    "Evidence verification",
+    "Reasoning completeness",
+    "Risk + confidence",
+  ];
+  const done = stage === 5;
   return (
-    <li
-      className={`flex items-start gap-4 rounded-lg border px-4 py-3 transition ${
-        complete
-          ? "border-[var(--success)]/40 bg-[var(--success)]/5"
-          : active
-          ? "border-primary bg-primary/10"
-          : "border-border bg-background/30"
-      }`}
-    >
-      <div
-        className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border font-mono text-xs ${
-          complete
-            ? "border-[var(--success)] text-[var(--success)]"
-            : active
-            ? "border-primary text-primary animate-pulse"
-            : "border-border text-muted-foreground"
-        }`}
-      >
-        {complete ? "✓" : idx + 1}
+    <div className="rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Trust pipeline
+          </span>
+          {done ? (
+            <span className="text-[11px] text-[var(--success)]">5/5 layers ✓</span>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">
+              {Math.max(0, stage + 1)}/5 layers
+            </span>
+          )}
+        </div>
+        {confidence != null && (
+          <div className="text-right">
+            <span className={`font-display text-2xl leading-none ${riskColor}`}>
+              {confidence}%
+            </span>
+            <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+              accuracy
+            </span>
+          </div>
+        )}
       </div>
-      <div>
-        <p className="text-sm font-medium">{title}</p>
-        <p className="text-xs text-muted-foreground">{desc}</p>
+      <div className="mt-2 flex gap-1">
+        {steps.map((label, i) => {
+          const active = stage === i;
+          const complete = stage > i;
+          return (
+            <div
+              key={label}
+              title={label}
+              className={`h-1.5 flex-1 rounded-full transition ${
+                complete
+                  ? "bg-[var(--success)]"
+                  : active
+                  ? "bg-primary animate-pulse"
+                  : "bg-muted"
+              }`}
+            />
+          );
+        })}
       </div>
-    </li>
+      {!done && stage >= 0 && (
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          {steps[Math.min(stage, 4)]}…
+        </p>
+      )}
+    </div>
   );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
+        {title}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function RiskDot({ risk }: { risk: RiskLevel }) {
+  const c =
+    risk === "high"
+      ? "bg-[var(--danger)]"
+      : risk === "medium"
+      ? "bg-[var(--warning)]"
+      : "bg-[var(--success)]";
+  return <span className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${c}`} />;
 }
 
 function RiskBadge({ risk }: { risk: RiskLevel }) {
