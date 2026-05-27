@@ -48,6 +48,25 @@
   --ring: oklch(0.72 0.14 155);
 }
 
+.light {
+  --background: oklch(0.98 0.002 270);
+  --foreground: oklch(0.2 0.005 270);
+  --sidebar: oklch(0.96 0.003 270);
+  --card: oklch(0.97 0.003 270);
+  --card-foreground: oklch(0.2 0.005 270);
+  --muted: oklch(0.92 0.005 270);
+  --muted-foreground: oklch(0.55 0.012 270);
+  --border: oklch(0.88 0.008 270);
+  --primary: oklch(0.55 0.14 155);
+  --primary-foreground: oklch(0.98 0.005 270);
+  --accent: oklch(0.55 0.14 200);
+  --accent-foreground: oklch(0.98 0.005 270);
+  --success: oklch(0.55 0.16 150);
+  --warning: oklch(0.6 0.16 78);
+  --danger: oklch(0.55 0.18 25);
+  --ring: oklch(0.55 0.14 155);
+}
+
 @layer base {
   @font-face {
     font-family: "Instrument Serif";
