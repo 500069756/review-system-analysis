@@ -354,7 +354,7 @@ function Index() {
                 }
               }}
               rows={1}
-              placeholder="Message Trust Layer…"
+              placeholder="Message Evaluation Layer…"
               className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
