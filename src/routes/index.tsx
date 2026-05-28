@@ -390,11 +390,11 @@ function EmptyState({ onPick }: { onPick: (s: Scenario) => void }) {
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground text-xl font-semibold">
-        T
+        E
       </div>
       <h1 className="mt-4 font-display text-4xl">How can I help — verifiably?</h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Ask anything. Every answer runs through a 5-layer trust evaluation before it's shown.
+        Ask anything. Every answer runs through a 5-layer evaluation before it's shown.
       </p>
       <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
         {SCENARIOS.map((s) => (
