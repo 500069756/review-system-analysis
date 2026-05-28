@@ -248,8 +248,8 @@ function Index() {
       >
         <div className="flex items-center justify-between p-3">
           <div className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">T</div>
-            <span className="text-sm font-medium">Trust Layer</span>
+            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">E</div>
+            <span className="text-sm font-medium">Evaluation Layer</span>
           </div>
           <button
             onClick={newChat}
