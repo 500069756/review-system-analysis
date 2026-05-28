@@ -430,7 +430,7 @@ function ChatBubble({ message }: { message: Message }) {
   return (
     <div className="mb-6 flex gap-3">
       <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground text-xs font-semibold">
-        T
+        E
       </div>
       <div className="flex-1 min-w-0">
         <AssistantContent message={message} />
