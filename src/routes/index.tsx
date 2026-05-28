@@ -6,7 +6,7 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Trust Layer — AI Chat with Evaluation" },
+      { title: "Evaluation Layer — AI Chat with Confidence Scoring" },
       {
         name: "description",
         content:
@@ -248,8 +248,8 @@ function Index() {
       >
         <div className="flex items-center justify-between p-3">
           <div className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">T</div>
-            <span className="text-sm font-medium">Trust Layer</span>
+            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">E</div>
+            <span className="text-sm font-medium">Evaluation Layer</span>
           </div>
           <button
             onClick={newChat}
@@ -300,7 +300,7 @@ function Index() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">Trust Layer</span>
+            <span className="font-medium">Evaluation Layer</span>
             <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               gemini-3-flash
             </span>
@@ -354,7 +354,7 @@ function Index() {
                 }
               }}
               rows={1}
-              placeholder="Message Trust Layer…"
+              placeholder="Message Evaluation Layer…"
               className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
@@ -390,11 +390,11 @@ function EmptyState({ onPick }: { onPick: (s: Scenario) => void }) {
   return (
     <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
       <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground text-xl font-semibold">
-        T
+        E
       </div>
       <h1 className="mt-4 font-display text-4xl">How can I help — verifiably?</h1>
       <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Ask anything. Every answer runs through a 5-layer trust evaluation before it's shown.
+        Ask anything. Every answer runs through a 5-layer evaluation before it's shown.
       </p>
       <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
         {SCENARIOS.map((s) => (
@@ -430,7 +430,7 @@ function ChatBubble({ message }: { message: Message }) {
   return (
     <div className="mb-6 flex gap-3">
       <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground text-xs font-semibold">
-        T
+        E
       </div>
       <div className="flex-1 min-w-0">
         <AssistantContent message={message} />
@@ -560,7 +560,7 @@ function PipelineCompact({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Trust pipeline
+            Evaluation pipeline
           </span>
           {done ? (
             <span className="text-[11px] text-[var(--success)]">5/5 layers ✓</span>
