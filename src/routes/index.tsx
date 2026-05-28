@@ -196,6 +196,10 @@ function Index() {
     setRunning(true);
     setSidebarOpen(false);
 
+    if (!activeConvId) {
+      setActiveConvId(crypto.randomUUID());
+    }
+
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text };
     const assistantMsg: Message = {
       id: crypto.randomUUID(),
@@ -205,6 +209,7 @@ function Index() {
       evalData: scenario,
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
+
 
     if (scenario) {
       animatePipeline({ fast: true });
