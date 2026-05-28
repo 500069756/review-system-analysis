@@ -560,7 +560,7 @@ function PipelineCompact({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Trust pipeline
+            Evaluation pipeline
           </span>
           {done ? (
             <span className="text-[11px] text-[var(--success)]">5/5 layers ✓</span>
