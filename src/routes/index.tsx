@@ -133,7 +133,9 @@ function Index() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const { theme, toggle } = useTheme();
+  const { conversations, upsert, remove, clearAll, get } = useChatHistory();
   const timers = useRef<number[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -142,6 +144,15 @@ function Index() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  // Persist active conversation whenever its messages change
+  useEffect(() => {
+    if (!activeConvId || messages.length === 0) return;
+    const firstUser = messages.find((m) => m.role === "user");
+    const title = firstUser?.content.slice(0, 60) ?? "New chat";
+    upsert(activeConvId, title, messages);
+  }, [messages, activeConvId, upsert]);
+
 
   const updateLastAssistant = (patch: Partial<Message>) => {
     setMessages((prev) => {
