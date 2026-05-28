@@ -254,7 +254,30 @@ function Index() {
     setRunning(false);
     setError(null);
     setSidebarOpen(false);
+    setActiveConvId(null);
   };
+
+  const loadConversation = (id: string) => {
+    const conv = get(id);
+    if (!conv) return;
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setRunning(false);
+    setError(null);
+    setInput("");
+    setMessages(conv.messages as Message[]);
+    setActiveConvId(conv.id);
+    setSidebarOpen(false);
+  };
+
+  const deleteConversation = (id: string) => {
+    remove(id);
+    if (id === activeConvId) {
+      setMessages([]);
+      setActiveConvId(null);
+    }
+  };
+
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
