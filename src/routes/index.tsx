@@ -312,7 +312,7 @@ function Index() {
         <div className="px-3 pb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
           Examples
         </div>
-        <nav className="flex-1 overflow-y-auto px-2 pb-3">
+        <nav className="px-2 pb-3">
           {SCENARIOS.map((s) => (
             <button
               key={s.id}
@@ -325,6 +325,15 @@ function Index() {
             </button>
           ))}
         </nav>
+
+        <HistoryList
+          conversations={conversations}
+          activeId={activeConvId}
+          onSelect={loadConversation}
+          onDelete={deleteConversation}
+          onClearAll={clearAll}
+        />
+
 
         <div className="border-t border-border p-3 text-[11px] text-muted-foreground">
           Post-generation evaluation prototype
