@@ -8,11 +8,11 @@ export const Route = createFileRoute("/")({
   component: Index,
   head: () => ({
     meta: [
-      { title: "Evaluation Layer — AI Chat with Confidence Scoring" },
+      { title: "Trust evaluation layer for non-tech working professionals" },
       {
         name: "description",
         content:
-          "ChatGPT-style interface with a built-in post-generation trust evaluation layer: cross-model validation, evidence checks, reasoning gaps, and confidence scoring.",
+          "ChatGPT-style interface with a built-in post-generation trust evaluation layer for non-tech working professionals: cross-model validation, evidence checks, reasoning gaps, and confidence scoring.",
       },
     ],
   }),
@@ -290,7 +290,7 @@ function Index() {
         <div className="flex items-center justify-between p-3">
           <div className="flex items-center gap-2">
             <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">E</div>
-            <span className="text-sm font-medium">Evaluation Layer</span>
+            <span className="text-sm font-medium">Trust evaluation layer for non-tech working professionals</span>
           </div>
           <button
             onClick={newChat}
@@ -350,7 +350,7 @@ function Index() {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">Evaluation Layer</span>
+            <span className="font-medium">Trust evaluation layer for non-tech working professionals</span>
             <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
               gemini-3-flash
             </span>
@@ -404,7 +404,7 @@ function Index() {
                 }
               }}
               rows={1}
-              placeholder="Message Evaluation Layer…"
+              placeholder="Message Trust evaluation layer for non-tech working professionals…"
               className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
             />
             <button
