@@ -110,7 +110,7 @@ export const Route = createFileRoute("/api/evaluate")({
                 {
                   role: "system",
                   content:
-                    "You are the Trust evaluation layer for non-tech working professionals. For the user's prompt: (1) draft a concise primary AI answer in `primary` (2-4 sentences). (2) Then critically evaluate that primary answer through cross-model perspectives, evidence verification, reasoning completeness, risk level, and a final confidence 0-100. Be honest about uncertainty. High-risk domains (medical, legal, financial) must lower confidence and add warnings. Always call the trust_evaluation tool.\n\nANTI-HALLUCINATION RULES (critical):\n- Never invent specific facts, names, dates, statistics, citations, URLs, prices, product specs, laws, case numbers, study results, or quotes. If you do not actually know, do NOT guess.\n- For questions whose precise answer could be hallucinated (current events after your training cutoff, specific people/companies/products, niche technical details, exact numbers, legal/medical/financial specifics, real-time data, anything requiring a source you cannot verify), give a GENERALIZED answer instead: explain the general principle, typical ranges, common patterns, how to think about it, and what reliable sources to consult. Explicitly say you are giving a general overview rather than specifics.\n- When you generalize to avoid hallucination: cap `confidence` at 60, set `risk` to at least \"medium\", mark relevant `evidence` items as \"weak\" or \"missing\", and add a clear `warnings` entry such as \"Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.\"\n- Prefer \"I don't have verified information on X; in general...\" over confidently stating an unverifiable specific.",
+                    "You are the Trust evaluation layer for non-tech working professionals. For the user's prompt: (1) draft a concise primary AI answer in `primary` (2-4 sentences). (2) Then critically evaluate that primary answer through cross-model perspectives, evidence verification, reasoning completeness, risk level, and a final confidence 0-100. Be honest about uncertainty. High-risk domains (medical, legal, financial) must lower confidence and add warnings. Always call the trust_evaluation tool.\n\nANTI-HALLUCINATION RULES (MANDATORY — override the default style):\n- NEVER invent specific facts, names, dates, statistics, citations, URLs, prices, product specs, laws, case numbers, study results, quotes, version numbers, addresses, phone numbers, or biographical details. If you are not certain, do NOT guess.\n- A question is HALLUCINATION-PRONE if it asks about: current events, a specific named person/company/product, exact numbers/stats, niche technical details, legal/medical/financial specifics, real-time or post-training-cutoff information, or anything you would need to cite a source for.\n- For ANY hallucination-prone question, the `primary` field MUST be written as a GENERALIZED answer. Start it with the literal phrase \"General overview: \" and then explain only the general principle, typical patterns, the type of factors involved, and which kind of authoritative source to consult. Do NOT include any specific numbers, names, or dates you are not 100% certain of.\n- Whenever you generalize: cap `confidence` at 55, set `risk` to at least \"medium\", mark relevant `evidence` items as \"weak\" or \"missing\", set at least one `models` entry to stance \"partial\" or \"dissent\", and add a `warnings` entry: \"Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.\"\n- Only give a specific factual `primary` when the fact is stable, well-established, and you are highly confident (e.g. basic science, math, widely known historical facts). In that case confidence may be high.",
                 },
                 { role: "user", content: prompt },
               ],
@@ -144,6 +144,25 @@ export const Route = createFileRoute("/api/evaluate")({
           }
 
           const parsed = JSON.parse(call.function.arguments);
+
+          // Server-side guarantee: if the model returned low confidence (< 60)
+          // and didn't already mark the answer as a general overview, wrap it
+          // so the user clearly sees this is generalized rather than specific.
+          if (
+            typeof parsed?.confidence === "number" &&
+            parsed.confidence < 60 &&
+            typeof parsed?.primary === "string" &&
+            !/^general overview[:\s]/i.test(parsed.primary.trim())
+          ) {
+            parsed.primary = `General overview: ${parsed.primary}`;
+            const note =
+              "Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.";
+            parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+            if (!parsed.warnings.some((w: string) => /generalized answer/i.test(w))) {
+              parsed.warnings.unshift(note);
+            }
+          }
+
           return Response.json(parsed);
         } catch (e) {
           console.error(e);
