@@ -427,6 +427,9 @@ function Index() {
           <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
             Every response is cross-validated, evidence-checked, and confidence-scored before you see it.
           </p>
+          <p className="mx-auto mt-1 max-w-3xl text-center text-[11px] text-[var(--warning)]">
+            ⚠ Works only for factual questions.
+          </p>
         </div>
       </main>
 
