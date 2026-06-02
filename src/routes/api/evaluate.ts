@@ -144,6 +144,25 @@ export const Route = createFileRoute("/api/evaluate")({
           }
 
           const parsed = JSON.parse(call.function.arguments);
+
+          // Server-side guarantee: if the model returned low confidence (< 60)
+          // and didn't already mark the answer as a general overview, wrap it
+          // so the user clearly sees this is generalized rather than specific.
+          if (
+            typeof parsed?.confidence === "number" &&
+            parsed.confidence < 60 &&
+            typeof parsed?.primary === "string" &&
+            !/^general overview[:\s]/i.test(parsed.primary.trim())
+          ) {
+            parsed.primary = `General overview: ${parsed.primary}`;
+            const note =
+              "Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.";
+            parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+            if (!parsed.warnings.some((w: string) => /generalized answer/i.test(w))) {
+              parsed.warnings.unshift(note);
+            }
+          }
+
           return Response.json(parsed);
         } catch (e) {
           console.error(e);
