@@ -145,9 +145,13 @@ function Index() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  // Persist active conversation whenever its messages change
+  // Persist active conversation only when the latest assistant message has
+  // finished its evaluation pipeline (stage === 5). This avoids saving
+  // mid-pipeline snapshots that would reload as a frozen, half-evaluated chat.
   useEffect(() => {
     if (!activeConvId || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    if (last.role === "assistant" && (last.stage ?? -1) !== 5) return;
     const firstUser = messages.find((m) => m.role === "user");
     const title = firstUser?.content.slice(0, 60) ?? "New chat";
     upsert(activeConvId, title, messages);
