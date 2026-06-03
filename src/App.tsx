@@ -1,22 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory, type Conversation } from "@/hooks/useChatHistory";
-
-
-export const Route = createFileRoute("/")({
-  component: Index,
-  head: () => ({
-    meta: [
-      { title: "Trust evaluation layer for non-tech working professionals" },
-      {
-        name: "description",
-        content:
-          "ChatGPT-style interface with a built-in post-generation trust evaluation layer for non-tech working professionals: cross-model validation, evidence checks, reasoning gaps, and confidence scoring.",
-      },
-    ],
-  }),
-});
 
 type RiskLevel = "low" | "medium" | "high";
 
@@ -124,10 +108,117 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   evalData?: Scenario & { confidence?: number };
-  stage?: number; // -1 idle, 0..4 in progress, 5 done
+  stage?: number;
 };
 
-function Index() {
+const EVAL_TOOL = {
+  type: "function",
+  function: {
+    name: "trust_evaluation",
+    description:
+      "Evaluate an AI primary response across cross-model validation, evidence verification, reasoning completeness, and risk. Return a single confidence score 0-100.",
+    parameters: {
+      type: "object",
+      properties: {
+        primary: { type: "string" },
+        category: { type: "string" },
+        risk: { type: "string", enum: ["low", "medium", "high"] },
+        confidence: { type: "number" },
+        models: {
+          type: "array",
+          minItems: 3,
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", enum: ["gpt-primary", "claude-verifier", "domain-eval"] },
+              verdict: { type: "string" },
+              stance: { type: "string", enum: ["agree", "partial", "dissent"] },
+            },
+            required: ["name", "verdict", "stance"],
+            additionalProperties: false,
+          },
+        },
+        evidence: {
+          type: "array",
+          minItems: 3,
+          maxItems: 4,
+          items: {
+            type: "object",
+            properties: {
+              dimension: { type: "string" },
+              status: { type: "string", enum: ["ok", "weak", "missing"] },
+              note: { type: "string" },
+            },
+            required: ["dimension", "status", "note"],
+            additionalProperties: false,
+          },
+        },
+        reasoningGaps: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" } },
+        warnings: { type: "array", minItems: 0, maxItems: 3, items: { type: "string" } },
+      },
+      required: ["primary", "category", "risk", "confidence", "models", "evidence", "reasoningGaps", "warnings"],
+      additionalProperties: false,
+    },
+  },
+} as const;
+
+const SYSTEM_PROMPT =
+  "You are the Trust evaluation layer for non-tech working professionals. For the user's prompt: (1) draft a concise primary AI answer in `primary` (2-4 sentences). (2) Then critically evaluate that primary answer through cross-model perspectives, evidence verification, reasoning completeness, risk level, and a final confidence 0-100. Be honest about uncertainty. High-risk domains (medical, legal, financial) must lower confidence and add warnings. Always call the trust_evaluation tool.\n\nANTI-HALLUCINATION RULES (MANDATORY): NEVER invent specific facts, names, dates, statistics, citations, URLs, prices, product specs, laws, case numbers, study results, quotes, version numbers, addresses, phone numbers, or biographical details. For ANY hallucination-prone question, the `primary` field MUST start with the literal phrase \"General overview: \" and explain only general principles. When generalizing: cap `confidence` at 55, set `risk` to at least \"medium\", mark relevant `evidence` as \"weak\" or \"missing\", set at least one `models` entry to \"partial\" or \"dissent\", and add a `warnings` entry: \"Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.\" Only give specific `primary` when the fact is stable and you are highly confident.";
+
+async function evaluatePrompt(prompt: string): Promise<EvalResult> {
+  const apiKey = import.meta.env.VITE_LOVABLE_API_KEY as string | undefined;
+  if (!apiKey) {
+    throw new Error("Missing VITE_LOVABLE_API_KEY. Add it to your .env file.");
+  }
+
+  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-3-flash-preview",
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      tools: [EVAL_TOOL],
+      tool_choice: { type: "function", function: { name: "trust_evaluation" } },
+    }),
+  });
+
+  if (!res.ok) {
+    if (res.status === 429) throw new Error("Rate limit exceeded. Please try again in a moment.");
+    if (res.status === 402) throw new Error("AI credits exhausted.");
+    throw new Error(`AI gateway error (${res.status})`);
+  }
+
+  const json = await res.json();
+  const call = json.choices?.[0]?.message?.tool_calls?.[0];
+  if (!call?.function?.arguments) throw new Error("No structured output returned");
+  const parsed = JSON.parse(call.function.arguments) as EvalResult;
+
+  if (
+    typeof parsed?.confidence === "number" &&
+    parsed.confidence < 60 &&
+    typeof parsed?.primary === "string" &&
+    !/^general overview[:\s]/i.test(parsed.primary.trim())
+  ) {
+    parsed.primary = `General overview: ${parsed.primary}`;
+    const note =
+      "Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.";
+    parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
+    if (!parsed.warnings.some((w: string) => /generalized answer/i.test(w))) {
+      parsed.warnings.unshift(note);
+    }
+  }
+
+  return parsed;
+}
+
+export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
@@ -145,9 +236,6 @@ function Index() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  // Persist active conversation only when the latest assistant message has
-  // finished its evaluation pipeline (stage === 5). This avoids saving
-  // mid-pipeline snapshots that would reload as a frozen, half-evaluated chat.
   useEffect(() => {
     if (!activeConvId || messages.length === 0) return;
     const last = messages[messages.length - 1];
@@ -156,7 +244,6 @@ function Index() {
     const title = firstUser?.content.slice(0, 60) ?? "New chat";
     upsert(activeConvId, title, messages);
   }, [messages, activeConvId, upsert]);
-
 
   const updateLastAssistant = (patch: Partial<Message>) => {
     setMessages((prev) => {
@@ -214,7 +301,6 @@ function Index() {
     };
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
-
     if (scenario) {
       animatePipeline({ fast: true });
       return;
@@ -222,14 +308,7 @@ function Index() {
 
     animatePipeline();
     try {
-      const res = await fetch("/api/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Evaluation failed");
-      const r = data as EvalResult;
+      const r = await evaluatePrompt(text);
       updateLastAssistant({
         evalData: {
           id: "live",
@@ -282,10 +361,8 @@ function Index() {
     }
   };
 
-
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      {/* Sidebar */}
       <aside
         className={`absolute inset-y-0 left-0 z-30 flex w-64 flex-col bg-[var(--sidebar)] border-r border-border transition-transform md:relative md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -338,13 +415,11 @@ function Index() {
           onClearAll={clearAll}
         />
 
-
         <div className="border-t border-border p-3 text-[11px] text-muted-foreground">
           Post-generation evaluation prototype
         </div>
       </aside>
 
-      {/* Main */}
       <main className="relative flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-6">
           <button
@@ -389,7 +464,6 @@ function Index() {
           )}
         </div>
 
-        {/* Composer */}
         <div className="border-t border-border bg-background px-4 py-4 md:px-6">
           <form
             onSubmit={(e) => {
@@ -519,7 +593,6 @@ function AssistantContent({ message }: { message: Message }) {
 
   return (
     <div className="space-y-3">
-      {/* Pipeline progress (always shown, compact when done) */}
       <PipelineCompact stage={stage} confidence={done ? confidence : null} riskColor={riskColor} />
 
       {done && data && (
@@ -546,10 +619,7 @@ function AssistantContent({ message }: { message: Message }) {
               <Section title="Cross-model validation">
                 <ul className="space-y-2">
                   {data.models.map((m) => (
-                    <li
-                      key={m.name}
-                      className="rounded-lg border border-border bg-background/40 p-2.5"
-                    >
+                    <li key={m.name} className="rounded-lg border border-border bg-background/40 p-2.5">
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-[11px]">{m.name}</span>
                         <StanceBadge stance={m.stance} />
@@ -563,10 +633,7 @@ function AssistantContent({ message }: { message: Message }) {
               <Section title="Evidence verification">
                 <ul className="space-y-2">
                   {data.evidence.map((e) => (
-                    <li
-                      key={e.dimension}
-                      className="rounded-lg border border-border bg-background/40 p-2.5"
-                    >
+                    <li key={e.dimension} className="rounded-lg border border-border bg-background/40 p-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-xs font-medium">{e.dimension}</span>
                         <EvidenceBadge status={e.status} />
@@ -799,4 +866,3 @@ function HistoryList({
     </div>
   );
 }
-
