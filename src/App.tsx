@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import { useChatHistory, type Conversation } from "@/hooks/useChatHistory";
+import { chatCompletion } from "@/lib/ai";
 
 type RiskLevel = "low" | "medium" | "high";
 
@@ -167,38 +168,39 @@ const SYSTEM_PROMPT =
   "You are the Trust evaluation layer for non-tech working professionals. For the user's prompt: (1) draft a concise primary AI answer in `primary` (2-4 sentences). (2) Then critically evaluate that primary answer through cross-model perspectives, evidence verification, reasoning completeness, risk level, and a final confidence 0-100. Be honest about uncertainty. High-risk domains (medical, legal, financial) must lower confidence and add warnings. Always call the trust_evaluation tool.\n\nANTI-HALLUCINATION RULES (MANDATORY): NEVER invent specific facts, names, dates, statistics, citations, URLs, prices, product specs, laws, case numbers, study results, quotes, version numbers, addresses, phone numbers, or biographical details. For ANY hallucination-prone question, the `primary` field MUST start with the literal phrase \"General overview: \" and explain only general principles. When generalizing: cap `confidence` at 55, set `risk` to at least \"medium\", mark relevant `evidence` as \"weak\" or \"missing\", set at least one `models` entry to \"partial\" or \"dissent\", and add a `warnings` entry: \"Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.\" Only give specific `primary` when the fact is stable and you are highly confident.";
 
 async function evaluatePrompt(prompt: string): Promise<EvalResult> {
-  const apiKey = import.meta.env.VITE_LOVABLE_API_KEY as string | undefined;
-  if (!apiKey) {
-    throw new Error("Missing VITE_LOVABLE_API_KEY. Add it to your .env file.");
-  }
-
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      tools: [EVAL_TOOL],
-      tool_choice: { type: "function", function: { name: "trust_evaluation" } },
-    }),
+  const json = await chatCompletion({
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: prompt },
+    ],
+    tools: [EVAL_TOOL],
+    tool_choice: { type: "function", function: { name: "trust_evaluation" } },
+    max_tokens: 2000,
   });
 
-  if (!res.ok) {
-    if (res.status === 429) throw new Error("Rate limit exceeded. Please try again in a moment.");
-    if (res.status === 402) throw new Error("AI credits exhausted.");
-    throw new Error(`AI gateway error (${res.status})`);
-  }
+  const message = json?.choices?.[0]?.message;
+  const call = message?.tool_calls?.[0];
+  const args = call?.function?.arguments;
 
-  const json = await res.json();
-  const call = json.choices?.[0]?.message?.tool_calls?.[0];
-  if (!call?.function?.arguments) throw new Error("No structured output returned");
-  const parsed = JSON.parse(call.function.arguments) as EvalResult;
+  let parsed: EvalResult;
+  if (args) {
+    try {
+      parsed = typeof args === "string" ? JSON.parse(args) : args;
+    } catch (e) {
+      throw new Error(`Failed to parse tool arguments: ${(e as Error).message}`);
+    }
+  } else if (typeof message?.content === "string") {
+    // Fallback: some providers ignore tool_choice and return plain content.
+    const match = message.content.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("Model returned no structured output and no JSON in content.");
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch (e) {
+      throw new Error(`Failed to parse fallback JSON: ${(e as Error).message}`);
+    }
+  } else {
+    throw new Error("OpenRouter response missing tool_calls and content.");
+  }
 
   if (
     typeof parsed?.confidence === "number" &&
@@ -431,7 +433,7 @@ export default function App() {
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium">Trust evaluation layer for non-tech working professionals</span>
             <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              gemini-3-flash
+              claude-sonnet-4
             </span>
           </div>
           <button
