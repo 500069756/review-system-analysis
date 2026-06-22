@@ -261,7 +261,7 @@ export default function App() {
 
       <footer className="border-t border-border bg-sidebar">
         <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-muted-foreground">
-          Powered by Groq · llama-3.3-70b-versatile · client-side retrieval over {agg.total} reviews
+          Powered by Groq · llama-3.1-8b-instant · client-side retrieval over {agg.total} reviews
         </div>
       </footer>
     </div>
@@ -926,7 +926,7 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
         <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
           <div className="mb-1 font-medium text-foreground">How it works</div>
           Each question retrieves the top ~40 most-relevant reviews from {REVIEWS.length} total and
-          sends them to llama-3.3-70b-versatile via Groq. Full Analysis runs all core questions and
+          sends them to llama-3.1-8b-instant via Groq. Full Analysis runs all core questions and
           adds an executive summary across them.
         </div>
       </aside>
