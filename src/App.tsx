@@ -151,7 +151,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <nav className="flex rounded-md border border-border bg-card p-1 text-sm">
-              {(["overview", "explorer", "ai"] as const).map((t) => (
+              {(["overview", "themes", "explorer", "ai"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
