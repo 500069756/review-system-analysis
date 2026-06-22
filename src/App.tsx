@@ -273,22 +273,22 @@ function TopHero({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="chip mb-3 w-fit">
-            <span className="pulse-dot" />
-            Multi-source feedback intelligence
+            <SpotifyIcon className="h-3.5 w-3.5 text-primary" />
+            Spotify feedback intelligence
           </div>
-          <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-            Listen to <span className="italic text-primary-glow">every review</span>,
-            <br className="hidden md:block" /> answer the questions that matter.
-          </h1>
+          <div className="flex items-center gap-4">
+            <SpotifyIcon className="hidden h-12 w-12 shrink-0 text-primary lg:block" />
+            <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
+              Spotify Review <span className="italic text-primary">Analysis System</span>
+            </h1>
+          </div>
           <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-            {agg.total.toLocaleString()} reviews from {sources.length} channels — pre-classified
-            across sentiment, topic, pain points, user goals, listening behavior, and product
-            opportunities.
+            {agg.total.toLocaleString()} Spotify reviews from {sources.length} channels —
+            pre-classified across sentiment, topic, pain points, listener goals, behavior, and
+            product opportunities.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 lg:hidden">
-          {/* mobile nav is handled by Sidebar on desktop; surface a compact selector here */}
-        </div>
+        <div className="flex flex-wrap gap-2 lg:hidden" />
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
