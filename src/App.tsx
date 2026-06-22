@@ -67,6 +67,9 @@ type Review = {
   goal?: string;
   behavior?: string;
   opportunity?: string;
+  rootCause?: string;
+  persona?: string;
+  unmetNeed?: string;
 };
 
 const REVIEWS = reviewsData as Review[];
@@ -397,6 +400,9 @@ function Themes() {
   const goals = useMemo(() => countField(pool, "goal", 20), [pool]);
   const behaviors = useMemo(() => countField(pool, "behavior", 20), [pool]);
   const opportunities = useMemo(() => countField(pool, "opportunity", 20), [pool]);
+  const rootCauses = useMemo(() => countField(pool, "rootCause", 20), [pool]);
+  const personas = useMemo(() => countField(pool, "persona", 20), [pool]);
+  const unmetNeeds = useMemo(() => countField(pool, "unmetNeed", 20), [pool]);
   const sentiment = useMemo(() => sentimentMix(pool), [pool]);
   const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
 
@@ -470,7 +476,10 @@ function Themes() {
       <ThemeList title="Most common pain points" items={pains} />
       <ThemeList title="User goals" items={goals} />
       <ThemeList title="Listening behaviors" items={behaviors} />
-      <ThemeList title="Suggested opportunities" items={opportunities} className="lg:col-span-2" />
+      <ThemeList title="Root causes (why discovery fails)" items={rootCauses} />
+      <ThemeList title="User personas" items={personas} />
+      <ThemeList title="Unmet needs" items={unmetNeeds} />
+      <ThemeList title="AI opportunity areas" items={opportunities} className="lg:col-span-2" />
     </div>
   );
 }
