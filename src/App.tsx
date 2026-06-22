@@ -476,7 +476,10 @@ function Themes() {
       <ThemeList title="Most common pain points" items={pains} />
       <ThemeList title="User goals" items={goals} />
       <ThemeList title="Listening behaviors" items={behaviors} />
-      <ThemeList title="Suggested opportunities" items={opportunities} className="lg:col-span-2" />
+      <ThemeList title="Root causes (why discovery fails)" items={rootCauses} />
+      <ThemeList title="User personas" items={personas} />
+      <ThemeList title="Unmet needs" items={unmetNeeds} />
+      <ThemeList title="AI opportunity areas" items={opportunities} className="lg:col-span-2" />
     </div>
   );
 }
