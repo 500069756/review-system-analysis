@@ -126,8 +126,8 @@
   }
   body {
     background-image:
-      radial-gradient(1200px 600px at 90% -10%, oklch(0.66 0.21 275 / 0.18), transparent 60%),
-      radial-gradient(900px 500px at -10% 10%, oklch(0.78 0.16 200 / 0.12), transparent 60%);
+      radial-gradient(1200px 600px at 90% -10%, oklch(0.72 0.19 148 / 0.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, oklch(0.72 0.19 148 / 0.08), transparent 60%);
     background-attachment: fixed;
   }
   .light body {
