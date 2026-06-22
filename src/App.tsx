@@ -106,6 +106,28 @@ function topKeywords(pool: Review[], n = 30): { term: string; count: number }[] 
     .slice(0, n);
 }
 
+function countField(pool: Review[], field: keyof Review, n = 20) {
+  const counts: Record<string, number> = {};
+  for (const r of pool) {
+    const v = (r[field] as string | undefined)?.trim();
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}
+
+function sentimentMix(pool: Review[]) {
+  const m: Record<string, number> = {};
+  for (const r of pool) {
+    const s = (r.sentiment || "Unknown").split("(")[0].trim() || "Unknown";
+    m[s] = (m[s] ?? 0) + 1;
+  }
+  return m;
+}
+
 // ─────────────────────────── UI ───────────────────────────
 
 type Tab = "overview" | "explorer" | "ai";
