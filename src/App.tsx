@@ -290,7 +290,100 @@ function Card({
   );
 }
 
-// ─────────────────────────── Explorer ───────────────────────────
+// ─────────────────────────── Themes (from per-review classification) ───────────────────────────
+
+function Themes() {
+  const topics = useMemo(() => countField(REVIEWS, "topic", 20), []);
+  const pains = useMemo(() => countField(REVIEWS, "pain", 20), []);
+  const goals = useMemo(() => countField(REVIEWS, "goal", 20), []);
+  const behaviors = useMemo(() => countField(REVIEWS, "behavior", 20), []);
+  const opportunities = useMemo(() => countField(REVIEWS, "opportunity", 20), []);
+  const sentiment = useMemo(() => sentimentMix(REVIEWS), []);
+  const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card title="Sentiment mix" className="lg:col-span-2">
+        <div className="flex h-3 w-full overflow-hidden rounded">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => {
+              const color =
+                k === "Positive"
+                  ? "bg-success"
+                  : k === "Negative"
+                    ? "bg-danger"
+                    : k === "Mixed"
+                      ? "bg-warning"
+                      : "bg-muted-foreground/40";
+              return (
+                <div
+                  key={k}
+                  className={color}
+                  style={{ width: `${(n / sentTotal) * 100}%` }}
+                  title={`${k}: ${n}`}
+                />
+              );
+            })}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => (
+              <span key={k}>
+                <strong className="text-foreground">{k}</strong> {n} ·{" "}
+                {((n / sentTotal) * 100).toFixed(0)}%
+              </span>
+            ))}
+        </div>
+      </Card>
+
+      <ThemeList title="Top topics" items={topics} />
+      <ThemeList title="Most common pain points" items={pains} />
+      <ThemeList title="User goals" items={goals} />
+      <ThemeList title="Listening behaviors" items={behaviors} />
+      <ThemeList title="Suggested opportunities" items={opportunities} className="lg:col-span-2" />
+    </div>
+  );
+}
+
+function ThemeList({
+  title,
+  items,
+  className = "",
+}: {
+  title: string;
+  items: { label: string; count: number }[];
+  className?: string;
+}) {
+  const max = items[0]?.count ?? 1;
+  return (
+    <Card title={title} className={className}>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No data</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.label}>
+              <div className="mb-1 flex items-start justify-between gap-3 text-sm">
+                <span className="leading-snug">{it.label}</span>
+                <span className="shrink-0 text-muted-foreground">{it.count}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
+                <div
+                  className="h-full bg-primary/70"
+                  style={{ width: `${(it.count / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
 
 function Explorer({ sources }: { sources: string[] }) {
   const [query, setQuery] = useState("");
