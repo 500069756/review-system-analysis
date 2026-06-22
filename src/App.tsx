@@ -130,7 +130,7 @@ function sentimentMix(pool: Review[]) {
 
 // ─────────────────────────── UI ───────────────────────────
 
-type Tab = "overview" | "explorer" | "ai";
+type Tab = "overview" | "themes" | "explorer" | "ai";
 
 export default function App() {
   const { theme, toggle: toggleTheme } = useTheme();
