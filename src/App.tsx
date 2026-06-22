@@ -67,6 +67,9 @@ type Review = {
   goal?: string;
   behavior?: string;
   opportunity?: string;
+  rootCause?: string;
+  persona?: string;
+  unmetNeed?: string;
 };
 
 const REVIEWS = reviewsData as Review[];
