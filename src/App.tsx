@@ -1,870 +1,657 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
-import { useChatHistory, type Conversation } from "@/hooks/useChatHistory";
 import { chatCompletion } from "@/lib/ai";
+import reviewsData from "@/data/reviews.json";
 
-type RiskLevel = "low" | "medium" | "high";
-
-type Scenario = {
+type Review = {
   id: string;
-  label: string;
-  prompt: string;
-  risk: RiskLevel;
-  category: string;
-  primary: string;
-  models: { name: string; verdict: string; stance: "agree" | "partial" | "dissent" }[];
-  evidence: { dimension: string; status: "ok" | "weak" | "missing"; note: string }[];
-  reasoningGaps: string[];
-  warnings: string[];
+  source: string;
+  rating: number | null;
+  text: string;
+  date: string | null;
+  username?: string | null;
 };
 
-const SCENARIOS: Scenario[] = [
-  {
-    id: "launch",
-    label: "Launch new feature next week?",
-    prompt: "Should we launch the new checkout feature next week?",
-    risk: "medium",
-    category: "Business strategy",
-    primary:
-      "Yes — launch next week. Early metrics from the beta show strong engagement and the team is ready to ship.",
-    models: [
-      { name: "gpt-primary", verdict: "Launch immediately.", stance: "agree" },
-      { name: "claude-verifier", verdict: "Requires another round of load testing before launch.", stance: "partial" },
-      { name: "domain-eval", verdict: "Scalability risk at 3× current traffic is unaddressed.", stance: "dissent" },
-    ],
-    evidence: [
-      { dimension: "Beta engagement claim", status: "ok", note: "Matches internal analytics for the last 14 days." },
-      { dimension: "Load test data", status: "missing", note: "No referenced load test above 1.2× current peak." },
-      { dimension: "Rollback plan", status: "weak", note: "Mentioned but not described." },
-    ],
-    reasoningGaps: [
-      "No causal link between beta engagement and post-launch retention.",
-      "Assumes infra capacity without citing observability data.",
-    ],
-    warnings: ["Medium-risk business decision: surface uncertainty before acting."],
-  },
-  {
-    id: "med",
-    label: "Ibuprofen dosing question",
-    prompt: "Is taking 600mg of ibuprofen every 4 hours safe for an adult?",
-    risk: "high",
-    category: "Medical",
-    primary:
-      "Adults can typically take ibuprofen for pain — common dosing is 200–400mg every 4–6 hours, not to exceed 1200mg/day OTC.",
-    models: [
-      { name: "gpt-primary", verdict: "Provides general dosing guidance.", stance: "partial" },
-      { name: "claude-verifier", verdict: "Flags that 600mg every 4h exceeds OTC max and requires clinician input.", stance: "dissent" },
-      { name: "medical-eval", verdict: "Strongly recommends consulting a licensed clinician; not safe to generalize.", stance: "dissent" },
-    ],
-    evidence: [
-      { dimension: "OTC daily max", status: "ok", note: "1200mg/day OTC limit verified against FDA labeling." },
-      { dimension: "Individual factors", status: "missing", note: "No assessment of weight, kidney function, or other meds." },
-      { dimension: "Citation", status: "weak", note: "No primary source linked in the answer." },
-    ],
-    reasoningGaps: [
-      "Answer does not address the specific dose asked about.",
-      "No discussion of contraindications or interactions.",
-    ],
-    warnings: [
-      "High-risk medical query — do NOT act on AI output alone.",
-      "Stricter evaluation triggered: blocked recommendation, surfaced clinician referral.",
-    ],
-  },
-  {
-    id: "brain",
-    label: "Coffee subscription names",
-    prompt: "Give me 10 creative names for a specialty coffee subscription service.",
-    risk: "low",
-    category: "Brainstorming",
-    primary:
-      "Here are ten name ideas: Dailygrind, Bean Post, Roast Letters, Cupboard, North Pour, Slow Drip Club, Cofounders, Brew Mail, Origin Box, Morning Index.",
-    models: [
-      { name: "gpt-primary", verdict: "Generated 10 names.", stance: "agree" },
-      { name: "claude-verifier", verdict: "Names are coherent and on-brief.", stance: "agree" },
-      { name: "domain-eval", verdict: "Two names overlap with existing trademarks — flag.", stance: "partial" },
-    ],
-    evidence: [
-      { dimension: "Trademark check", status: "weak", note: "'Bean Post' and 'Origin Box' are in use by real brands." },
-      { dimension: "Domain availability", status: "missing", note: "Not verified in this run." },
-      { dimension: "Brief alignment", status: "ok", note: "Tone matches specialty coffee market." },
-    ],
-    reasoningGaps: ["No rationale provided for each name."],
-    warnings: ["Low-risk creative task — light evaluation, surface trademark caveats."],
-  },
+const REVIEWS = reviewsData as Review[];
+
+const SUGGESTED_QUESTIONS = [
+  "Why do users struggle to discover new music?",
+  "What are the most common frustrations with recommendations?",
+  "What listening behaviors are users trying to achieve?",
+  "What causes users to repeatedly listen to the same content?",
+  "Which user segments experience different discovery challenges?",
+  "What unmet needs emerge consistently across reviews?",
 ];
 
-type EvalResult = {
-  primary: string;
-  category: string;
-  risk: RiskLevel;
-  confidence: number;
-  models: Scenario["models"];
-  evidence: Scenario["evidence"];
-  reasoningGaps: string[];
-  warnings: string[];
-};
+const STOPWORDS = new Set(
+  "a an the and or but if then so of to in on for with at by from is are was were be been being have has had do does did i you he she it we they me him her us them my your his its our their this that these those not no nor as about into over under more most less few many much very can will just like get got go going make made out up down".split(
+    " ",
+  ),
+);
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  evalData?: Scenario & { confidence?: number };
-  stage?: number;
-};
-
-const EVAL_TOOL = {
-  type: "function",
-  function: {
-    name: "trust_evaluation",
-    description:
-      "Evaluate an AI primary response across cross-model validation, evidence verification, reasoning completeness, and risk. Return a single confidence score 0-100.",
-    parameters: {
-      type: "object",
-      properties: {
-        primary: { type: "string" },
-        category: { type: "string" },
-        risk: { type: "string", enum: ["low", "medium", "high"] },
-        confidence: { type: "number" },
-        models: {
-          type: "array",
-          minItems: 3,
-          maxItems: 3,
-          items: {
-            type: "object",
-            properties: {
-              name: { type: "string", enum: ["gpt-primary", "claude-verifier", "domain-eval"] },
-              verdict: { type: "string" },
-              stance: { type: "string", enum: ["agree", "partial", "dissent"] },
-            },
-            required: ["name", "verdict", "stance"],
-            additionalProperties: false,
-          },
-        },
-        evidence: {
-          type: "array",
-          minItems: 3,
-          maxItems: 4,
-          items: {
-            type: "object",
-            properties: {
-              dimension: { type: "string" },
-              status: { type: "string", enum: ["ok", "weak", "missing"] },
-              note: { type: "string" },
-            },
-            required: ["dimension", "status", "note"],
-            additionalProperties: false,
-          },
-        },
-        reasoningGaps: { type: "array", minItems: 1, maxItems: 4, items: { type: "string" } },
-        warnings: { type: "array", minItems: 0, maxItems: 3, items: { type: "string" } },
-      },
-      required: ["primary", "category", "risk", "confidence", "models", "evidence", "reasoningGaps", "warnings"],
-      additionalProperties: false,
-    },
-  },
-} as const;
-
-const SYSTEM_PROMPT =
-  "You are the Trust evaluation layer for non-tech working professionals. For the user's prompt: (1) draft a concise primary AI answer in `primary` (2-4 sentences). (2) Then critically evaluate that primary answer through cross-model perspectives, evidence verification, reasoning completeness, risk level, and a final confidence 0-100. Be honest about uncertainty. High-risk domains (medical, legal, financial) must lower confidence and add warnings. Always call the trust_evaluation tool.\n\nANTI-HALLUCINATION RULES (MANDATORY): NEVER invent specific facts, names, dates, statistics, citations, URLs, prices, product specs, laws, case numbers, study results, quotes, version numbers, addresses, phone numbers, or biographical details. For ANY hallucination-prone question, the `primary` field MUST start with the literal phrase \"General overview: \" and explain only general principles. When generalizing: cap `confidence` at 55, set `risk` to at least \"medium\", mark relevant `evidence` as \"weak\" or \"missing\", set at least one `models` entry to \"partial\" or \"dissent\", and add a `warnings` entry: \"Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.\" Only give specific `primary` when the fact is stable and you are highly confident.";
-
-async function evaluatePrompt(prompt: string): Promise<EvalResult> {
-  const json = await chatCompletion({
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
-    tools: [EVAL_TOOL],
-    tool_choice: { type: "function", function: { name: "trust_evaluation" } },
-    max_tokens: 2000,
-  });
-
-  const message = json?.choices?.[0]?.message;
-  const call = message?.tool_calls?.[0];
-  const args = call?.function?.arguments;
-
-  let parsed: EvalResult;
-  if (args) {
-    try {
-      parsed = typeof args === "string" ? JSON.parse(args) : args;
-    } catch (e) {
-      throw new Error(`Failed to parse tool arguments: ${(e as Error).message}`);
-    }
-  } else if (typeof message?.content === "string") {
-    // Fallback: some providers ignore tool_choice and return plain content.
-    const match = message.content.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("Model returned no structured output and no JSON in content.");
-    try {
-      parsed = JSON.parse(match[0]);
-    } catch (e) {
-      throw new Error(`Failed to parse fallback JSON: ${(e as Error).message}`);
-    }
-  } else {
-    throw new Error("OpenRouter response missing tool_calls and content.");
-  }
-
-  if (
-    typeof parsed?.confidence === "number" &&
-    parsed.confidence < 60 &&
-    typeof parsed?.primary === "string" &&
-    !/^general overview[:\s]/i.test(parsed.primary.trim())
-  ) {
-    parsed.primary = `General overview: ${parsed.primary}`;
-    const note =
-      "Generalized answer to avoid hallucinated specifics — verify exact details with an authoritative source.";
-    parsed.warnings = Array.isArray(parsed.warnings) ? parsed.warnings : [];
-    if (!parsed.warnings.some((w: string) => /generalized answer/i.test(w))) {
-      parsed.warnings.unshift(note);
-    }
-  }
-
-  return parsed;
+function tokenize(s: string): string[] {
+  return (s.toLowerCase().match(/[a-z']{3,}/g) ?? []).filter((w) => !STOPWORDS.has(w));
 }
+
+type Scored = { review: Review; score: number };
+
+function retrieveRelevant(query: string, pool: Review[], k = 60): Scored[] {
+  const qTokens = Array.from(new Set(tokenize(query)));
+  if (qTokens.length === 0) {
+    // fallback: random-ish sample
+    return pool.slice(0, k).map((r) => ({ review: r, score: 0 }));
+  }
+  const scored: Scored[] = pool.map((r) => {
+    const text = r.text.toLowerCase();
+    let score = 0;
+    for (const t of qTokens) {
+      // term frequency
+      let idx = 0;
+      while ((idx = text.indexOf(t, idx)) !== -1) {
+        score += 1;
+        idx += t.length;
+      }
+    }
+    // gentle boost for low-rating reviews when query mentions frustration/problem words
+    if (r.rating !== null && r.rating <= 2) score *= 1.05;
+    return { review: r, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.filter((s) => s.score > 0).slice(0, k);
+  if (top.length >= 10) return top;
+  // pad with sample
+  const rest = scored.filter((s) => s.score === 0).slice(0, k - top.length);
+  return [...top, ...rest];
+}
+
+function aggregate(pool: Review[]) {
+  const bySource: Record<string, number> = {};
+  const byRating: Record<string, number> = {};
+  const ratingSumBySource: Record<string, { sum: number; n: number }> = {};
+  for (const r of pool) {
+    bySource[r.source] = (bySource[r.source] ?? 0) + 1;
+    const k = r.rating == null ? "n/a" : String(r.rating);
+    byRating[k] = (byRating[k] ?? 0) + 1;
+    if (r.rating != null) {
+      const s = (ratingSumBySource[r.source] ??= { sum: 0, n: 0 });
+      s.sum += r.rating;
+      s.n += 1;
+    }
+  }
+  const avgBySource = Object.fromEntries(
+    Object.entries(ratingSumBySource).map(([k, v]) => [k, +(v.sum / v.n).toFixed(2)]),
+  );
+  return { total: pool.length, bySource, byRating, avgBySource };
+}
+
+function topKeywords(pool: Review[], n = 30): { term: string; count: number }[] {
+  const counts: Record<string, number> = {};
+  for (const r of pool) {
+    const seen = new Set<string>();
+    for (const t of tokenize(r.text)) {
+      if (seen.has(t)) continue;
+      seen.add(t);
+      counts[t] = (counts[t] ?? 0) + 1;
+    }
+  }
+  return Object.entries(counts)
+    .map(([term, count]) => ({ term, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}
+
+// ─────────────────────────── UI ───────────────────────────
+
+type Tab = "overview" | "explorer" | "ai";
 
 export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeConvId, setActiveConvId] = useState<string | null>(null);
-  const { theme, toggle } = useTheme();
-  const { conversations, upsert, remove, clearAll, get } = useChatHistory();
-  const timers = useRef<number[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { theme, toggleTheme } = useTheme();
+  const [tab, setTab] = useState<Tab>("overview");
 
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
-    if (!activeConvId || messages.length === 0) return;
-    const last = messages[messages.length - 1];
-    if (last.role === "assistant" && (last.stage ?? -1) !== 5) return;
-    const firstUser = messages.find((m) => m.role === "user");
-    const title = firstUser?.content.slice(0, 60) ?? "New chat";
-    upsert(activeConvId, title, messages);
-  }, [messages, activeConvId, upsert]);
-
-  const updateLastAssistant = (patch: Partial<Message>) => {
-    setMessages((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i--) {
-        if (next[i].role === "assistant") {
-          next[i] = { ...next[i], ...patch };
-          break;
-        }
-      }
-      return next;
-    });
-  };
-
-  const animatePipeline = (opts?: { fast?: boolean }) => {
-    const stepDelay = opts?.fast ? 220 : 600;
-    const startDelay = opts?.fast ? 150 : 380;
-    [0, 1, 2, 3, 4].forEach((i) => {
-      const t = window.setTimeout(
-        () => updateLastAssistant({ stage: i }),
-        startDelay + i * stepDelay,
-      );
-      timers.current.push(t);
-    });
-    const tEnd = window.setTimeout(() => {
-      updateLastAssistant({ stage: 5 });
-      setRunning(false);
-    }, startDelay + 5 * stepDelay);
-    timers.current.push(tEnd);
-  };
-
-  const send = async (prompt: string, scenario?: Scenario) => {
-    if (running) return;
-    const text = prompt.trim();
-    if (!text) return;
-
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    setError(null);
-    setInput("");
-    setRunning(true);
-    setSidebarOpen(false);
-
-    if (!activeConvId) {
-      setActiveConvId(crypto.randomUUID());
-    }
-
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text };
-    const assistantMsg: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-      stage: -1,
-      evalData: scenario,
-    };
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-
-    if (scenario) {
-      animatePipeline({ fast: true });
-      return;
-    }
-
-    animatePipeline();
-    try {
-      const r = await evaluatePrompt(text);
-      updateLastAssistant({
-        evalData: {
-          id: "live",
-          label: "Custom prompt",
-          prompt: text,
-          risk: r.risk,
-          category: r.category,
-          primary: r.primary,
-          models: r.models,
-          evidence: r.evidence,
-          reasoningGaps: r.reasoningGaps,
-          warnings: r.warnings,
-          confidence: r.confidence,
-        },
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Evaluation failed");
-    }
-  };
-
-  const newChat = () => {
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    setMessages([]);
-    setInput("");
-    setRunning(false);
-    setError(null);
-    setSidebarOpen(false);
-    setActiveConvId(null);
-  };
-
-  const loadConversation = (id: string) => {
-    const conv = get(id);
-    if (!conv) return;
-    timers.current.forEach(clearTimeout);
-    timers.current = [];
-    setRunning(false);
-    setError(null);
-    setInput("");
-    setMessages(conv.messages as Message[]);
-    setActiveConvId(conv.id);
-    setSidebarOpen(false);
-  };
-
-  const deleteConversation = (id: string) => {
-    remove(id);
-    if (id === activeConvId) {
-      setMessages([]);
-      setActiveConvId(null);
-    }
-  };
+  const agg = useMemo(() => aggregate(REVIEWS), []);
+  const sources = useMemo(() => Object.keys(agg.bySource), [agg]);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background text-foreground">
-      <aside
-        className={`absolute inset-y-0 left-0 z-30 flex w-64 flex-col bg-[var(--sidebar)] border-r border-border transition-transform md:relative md:translate-x-0 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex items-center justify-between p-3">
-          <div className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground text-sm font-semibold">E</div>
-            <span className="text-sm font-medium">Trust evaluation layer for non-tech working professionals</span>
-          </div>
-          <button
-            onClick={newChat}
-            title="New chat"
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/></svg>
-          </button>
-        </div>
-
-        <button
-          onClick={newChat}
-          className="mx-3 mb-3 flex items-center justify-between rounded-lg border border-border bg-transparent px-3 py-2 text-sm hover:bg-muted"
-        >
-          New chat
-          <span className="text-muted-foreground">＋</span>
-        </button>
-
-        <div className="px-3 pb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-          Examples
-        </div>
-        <nav className="px-2 pb-3">
-          {SCENARIOS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => send(s.prompt, s)}
-              disabled={running}
-              className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground/90 hover:bg-muted disabled:opacity-50"
-            >
-              <span className="truncate">{s.label}</span>
-              <RiskDot risk={s.risk} />
-            </button>
-          ))}
-        </nav>
-
-        <HistoryList
-          conversations={conversations}
-          activeId={activeConvId}
-          onSelect={loadConversation}
-          onDelete={deleteConversation}
-          onClearAll={clearAll}
-        />
-
-        <div className="border-t border-border p-3 text-[11px] text-muted-foreground">
-          Post-generation evaluation prototype
-        </div>
-      </aside>
-
-      <main className="relative flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-border px-4 py-3 md:px-6">
-          <button
-            onClick={() => setSidebarOpen((v) => !v)}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground md:hidden"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <div className="flex items-center gap-2 text-sm">
-            <span className="font-medium">Trust evaluation layer for non-tech working professionals</span>
-            <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              claude-sonnet-4
-            </span>
-          </div>
-          <button
-            onClick={toggle}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            {theme === "dark" ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-            )}
-          </button>
-        </header>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {messages.length === 0 ? (
-            <EmptyState onPick={(s) => send(s.prompt, s)} />
-          ) : (
-            <div className="mx-auto max-w-3xl px-4 py-6 md:px-6">
-              {messages.map((m) => (
-                <ChatBubble key={m.id} message={m} />
-              ))}
-              {error && (
-                <div className="mt-3 rounded-lg border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-2 text-sm text-[var(--danger)]">
-                  {error}
-                </div>
-              )}
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border bg-sidebar">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
+          <div>
+            <div className="font-display text-2xl leading-none">Review Intelligence</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {agg.total.toLocaleString()} reviews · {sources.length} sources · AI-powered analysis
             </div>
-          )}
-        </div>
-
-        <div className="border-t border-border bg-background px-4 py-4 md:px-6">
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm focus-within:border-primary"
-          >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send(input);
-                }
-              }}
-              rows={1}
-              placeholder="Message Trust evaluation layer for non-tech working professionals…"
-              className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent px-2 py-2 text-sm outline-none placeholder:text-muted-foreground"
-            />
+          </div>
+          <div className="flex items-center gap-2">
+            <nav className="flex rounded-md border border-border bg-card p-1 text-sm">
+              {(["overview", "explorer", "ai"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded px-3 py-1.5 capitalize transition ${
+                    tab === t
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t === "ai" ? "AI Insights" : t}
+                </button>
+              ))}
+            </nav>
             <button
-              type="submit"
-              disabled={running || !input.trim()}
-              className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground transition disabled:opacity-40"
-              title="Send"
+              onClick={toggleTheme}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Toggle theme"
             >
-              {running ? (
-                <span className="block h-3 w-3 animate-pulse rounded-sm bg-primary-foreground" />
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-              )}
+              {theme === "dark" ? "Light" : "Dark"}
             </button>
-          </form>
-          <p className="mx-auto mt-2 max-w-3xl text-center text-[11px] text-muted-foreground">
-            Every response is cross-validated, evidence-checked, and confidence-scored before you see it.
-          </p>
-          <p className="mx-auto mt-1 max-w-3xl text-center text-[11px] text-[var(--warning)]">
-            ⚠ Works only for factual questions.
-          </p>
+          </div>
         </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        {tab === "overview" && <Overview agg={agg} />}
+        {tab === "explorer" && <Explorer sources={sources} />}
+        {tab === "ai" && <AIInsights sources={sources} />}
       </main>
 
-      {sidebarOpen && (
-        <div
-          onClick={() => setSidebarOpen(false)}
-          className="absolute inset-0 z-20 bg-black/40 md:hidden"
-        />
-      )}
-    </div>
-  );
-}
-
-function EmptyState({ onPick }: { onPick: (s: Scenario) => void }) {
-  return (
-    <div className="mx-auto flex h-full max-w-3xl flex-col items-center justify-center px-4 py-10 text-center">
-      <div className="grid h-12 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground text-xl font-semibold">
-        E
-      </div>
-      <h1 className="mt-4 font-display text-4xl">How can I help — verifiably?</h1>
-      <p className="mt-2 max-w-md text-sm text-muted-foreground">
-        Ask anything. Every answer runs through a 5-layer evaluation before it's shown.
-      </p>
-      <div className="mt-8 grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
-        {SCENARIOS.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => onPick(s)}
-            className="rounded-xl border border-border bg-card p-4 text-left transition hover:border-muted-foreground/50"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                {s.category}
-              </span>
-              <RiskBadge risk={s.risk} />
-            </div>
-            <p className="mt-2 text-sm">{s.prompt}</p>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ChatBubble({ message }: { message: Message }) {
-  if (message.role === "user") {
-    return (
-      <div className="mb-6 flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-muted px-4 py-2.5 text-sm">
-          {message.content}
+      <footer className="border-t border-border bg-sidebar">
+        <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-muted-foreground">
+          Powered by OpenRouter · claude-sonnet-4 · client-side retrieval over {agg.total} reviews
         </div>
-      </div>
-    );
-  }
-  return (
-    <div className="mb-6 flex gap-3">
-      <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground text-xs font-semibold">
-        E
-      </div>
-      <div className="flex-1 min-w-0">
-        <AssistantContent message={message} />
-      </div>
+      </footer>
     </div>
   );
 }
 
-function AssistantContent({ message }: { message: Message }) {
-  const stage = message.stage ?? -1;
-  const done = stage === 5;
-  const data = message.evalData;
+// ─────────────────────────── Overview ───────────────────────────
 
-  const confidence = useMemo(() => {
-    if (!data) return 0;
-    if (data.confidence != null) return Math.round(data.confidence);
-    const base = data.risk === "high" ? 38 : data.risk === "medium" ? 64 : 82;
-    const dissent = data.models.filter((m) => m.stance !== "agree").length;
-    const missing = data.evidence.filter((e) => e.status !== "ok").length;
-    return Math.max(8, base - dissent * 8 - missing * 6);
-  }, [data]);
-
-  const riskColor =
-    data?.risk === "high"
-      ? "text-[var(--danger)]"
-      : data?.risk === "medium"
-      ? "text-[var(--warning)]"
-      : "text-[var(--success)]";
+function Overview({ agg }: { agg: ReturnType<typeof aggregate> }) {
+  const keywords = useMemo(() => topKeywords(REVIEWS, 28), []);
+  const maxKw = keywords[0]?.count ?? 1;
+  const sourceMax = Math.max(...Object.values(agg.bySource));
 
   return (
-    <div className="space-y-3">
-      <PipelineCompact stage={stage} confidence={done ? confidence : null} riskColor={riskColor} />
-
-      {done && data && (
-        <>
-          <div className="rounded-xl border border-border bg-card p-4 text-sm leading-relaxed">
-            {data.primary}
-          </div>
-
-          {data.warnings.map((w, i) => (
-            <div
-              key={i}
-              className="rounded-lg border border-[var(--danger)]/30 bg-[var(--danger)]/10 px-3 py-2 text-xs"
-            >
-              ⚠ {w}
-            </div>
-          ))}
-
-          <details className="group rounded-xl border border-border bg-card">
-            <summary className="flex cursor-pointer items-center justify-between px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
-              <span>Evaluation details</span>
-              <span className="transition group-open:rotate-180">▾</span>
-            </summary>
-            <div className="space-y-4 border-t border-border px-4 py-4">
-              <Section title="Cross-model validation">
-                <ul className="space-y-2">
-                  {data.models.map((m) => (
-                    <li key={m.name} className="rounded-lg border border-border bg-background/40 p-2.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[11px]">{m.name}</span>
-                        <StanceBadge stance={m.stance} />
-                      </div>
-                      <p className="mt-1 text-xs">{m.verdict}</p>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-
-              <Section title="Evidence verification">
-                <ul className="space-y-2">
-                  {data.evidence.map((e) => (
-                    <li key={e.dimension} className="rounded-lg border border-border bg-background/40 p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-medium">{e.dimension}</span>
-                        <EvidenceBadge status={e.status} />
-                      </div>
-                      <p className="mt-1 text-[11px] text-muted-foreground">{e.note}</p>
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-
-              <Section title="Reasoning gaps">
-                <ul className="space-y-1.5">
-                  {data.reasoningGaps.map((g, i) => (
-                    <li key={i} className="text-xs">
-                      <span className="mr-2 font-mono text-[var(--warning)]">·</span>
-                      {g}
-                    </li>
-                  ))}
-                </ul>
-              </Section>
-            </div>
-          </details>
-        </>
-      )}
-    </div>
-  );
-}
-
-function PipelineCompact({
-  stage,
-  confidence,
-  riskColor,
-}: {
-  stage: number;
-  confidence: number | null;
-  riskColor: string;
-}) {
-  const steps = [
-    "Primary response",
-    "Cross-model validation",
-    "Evidence verification",
-    "Reasoning completeness",
-    "Risk + confidence",
-  ];
-  const done = stage === 5;
-  return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-            Evaluation pipeline
-          </span>
-          {done ? (
-            <span className="text-[11px] text-[var(--success)]">5/5 layers ✓</span>
-          ) : (
-            <span className="text-[11px] text-muted-foreground">
-              {Math.max(0, stage + 1)}/5 layers
-            </span>
-          )}
+    <div className="grid gap-6 lg:grid-cols-3">
+      <Card title="Reviews by source" className="lg:col-span-2">
+        <div className="space-y-3">
+          {Object.entries(agg.bySource)
+            .sort((a, b) => b[1] - a[1])
+            .map(([source, n]) => (
+              <div key={source}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span>{source}</span>
+                  <span className="text-muted-foreground">
+                    {n} · avg {agg.avgBySource[source] ?? "—"}★
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded bg-muted">
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${(n / sourceMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
         </div>
-        {confidence != null && (
-          <div className="text-right">
-            <span className={`font-display text-2xl leading-none ${riskColor}`}>
-              {confidence}%
-            </span>
-            <span className="ml-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-              accuracy
-            </span>
-          </div>
-        )}
-      </div>
-      <div className="mt-2 flex gap-1">
-        {steps.map((label, i) => {
-          const active = stage === i;
-          const complete = stage > i;
-          return (
-            <div
-              key={label}
-              title={label}
-              className={`h-1.5 flex-1 rounded-full transition ${
-                complete
-                  ? "bg-[var(--success)]"
-                  : active
-                  ? "bg-primary animate-pulse"
-                  : "bg-muted"
-              }`}
-            />
-          );
-        })}
-      </div>
-      {!done && stage >= 0 && (
-        <p className="mt-2 text-[11px] text-muted-foreground">
-          {steps[Math.min(stage, 4)]}…
-        </p>
-      )}
-    </div>
-  );
-}
+      </Card>
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <p className="mb-2 text-[10px] uppercase tracking-wider text-muted-foreground">
-        {title}
-      </p>
-      {children}
-    </div>
-  );
-}
-
-function RiskDot({ risk }: { risk: RiskLevel }) {
-  const c =
-    risk === "high"
-      ? "bg-[var(--danger)]"
-      : risk === "medium"
-      ? "bg-[var(--warning)]"
-      : "bg-[var(--success)]";
-  return <span className={`ml-auto h-1.5 w-1.5 shrink-0 rounded-full ${c}`} />;
-}
-
-function RiskBadge({ risk }: { risk: RiskLevel }) {
-  const map = {
-    low: ["border-[var(--success)]/40", "text-[var(--success)]"],
-    medium: ["border-[var(--warning)]/40", "text-[var(--warning)]"],
-    high: ["border-[var(--danger)]/40", "text-[var(--danger)]"],
-  } as const;
-  const [b, t] = map[risk];
-  return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${b} ${t}`}>
-      {risk}
-    </span>
-  );
-}
-
-function StanceBadge({ stance }: { stance: "agree" | "partial" | "dissent" }) {
-  const map = {
-    agree: ["bg-[var(--success)]/15", "text-[var(--success)]", "Agrees"],
-    partial: ["bg-[var(--warning)]/15", "text-[var(--warning)]", "Partial"],
-    dissent: ["bg-[var(--danger)]/15", "text-[var(--danger)]", "Dissents"],
-  } as const;
-  const [bg, t, label] = map[stance];
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${bg} ${t}`}>
-      {label}
-    </span>
-  );
-}
-
-function EvidenceBadge({ status }: { status: "ok" | "weak" | "missing" }) {
-  const map = {
-    ok: ["bg-[var(--success)]/15", "text-[var(--success)]", "Verified"],
-    weak: ["bg-[var(--warning)]/15", "text-[var(--warning)]", "Weak"],
-    missing: ["bg-[var(--danger)]/15", "text-[var(--danger)]", "Missing"],
-  } as const;
-  const [bg, t, label] = map[status];
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider ${bg} ${t}`}>
-      {label}
-    </span>
-  );
-}
-
-function HistoryList({
-  conversations,
-  activeId,
-  onSelect,
-  onDelete,
-  onClearAll,
-}: {
-  conversations: Conversation[];
-  activeId: string | null;
-  onSelect: (id: string) => void;
-  onDelete: (id: string) => void;
-  onClearAll: () => void;
-}) {
-  return (
-    <div className="flex min-h-0 flex-1 flex-col border-t border-border">
-      <div className="flex items-center justify-between px-3 pb-2 pt-3">
-        <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          History
-        </span>
-        {conversations.length > 0 && (
-          <button
-            onClick={() => {
-              if (confirm("Clear all chat history?")) onClearAll();
-            }}
-            className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-      <div className="flex-1 overflow-y-auto px-2 pb-3">
-        {conversations.length === 0 ? (
-          <p className="px-3 py-2 text-xs text-muted-foreground">
-            Your chats will appear here.
-          </p>
-        ) : (
-          conversations.map((c) => {
-            const active = c.id === activeId;
+      <Card title="Rating distribution">
+        <div className="space-y-2">
+          {["5", "4", "3", "2", "1", "n/a"].map((k) => {
+            const n = agg.byRating[k] ?? 0;
+            const pct = (n / agg.total) * 100;
             return (
-              <div
-                key={c.id}
-                className={`group flex items-center gap-1 rounded-lg pr-1 ${
-                  active ? "bg-muted" : "hover:bg-muted"
-                }`}
-              >
-                <button
-                  onClick={() => onSelect(c.id)}
-                  className="flex-1 truncate px-3 py-2 text-left text-sm text-foreground/90"
-                  title={c.title}
-                >
-                  {c.title || "New chat"}
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(c.id);
-                  }}
-                  title="Delete"
-                  className="rounded p-1 text-muted-foreground opacity-0 transition hover:bg-background hover:text-[var(--danger)] group-hover:opacity-100"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
-                </button>
+              <div key={k} className="flex items-center gap-3 text-sm">
+                <span className="w-8 text-muted-foreground">{k === "n/a" ? "—" : `${k}★`}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+                  <div
+                    className={`h-full ${
+                      k === "5" || k === "4"
+                        ? "bg-success"
+                        : k === "3"
+                          ? "bg-warning"
+                          : "bg-danger"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="w-12 text-right text-muted-foreground">{n}</span>
               </div>
             );
-          })
+          })}
+        </div>
+      </Card>
+
+      <Card title="Top terms across reviews" className="lg:col-span-3">
+        <div className="flex flex-wrap gap-2">
+          {keywords.map((k) => {
+            const scale = 0.75 + (k.count / maxKw) * 0.9;
+            return (
+              <span
+                key={k.term}
+                className="rounded-full border border-border bg-card px-3 py-1 text-muted-foreground"
+                style={{ fontSize: `${scale}rem` }}
+                title={`${k.count} reviews`}
+              >
+                {k.term}{" "}
+                <span className="text-xs opacity-60">{k.count}</span>
+              </span>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function Card({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-xl border border-border bg-card p-5 ${className}`}>
+      <h2 className="mb-4 font-display text-lg">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+// ─────────────────────────── Explorer ───────────────────────────
+
+function Explorer({ sources }: { sources: string[] }) {
+  const [query, setQuery] = useState("");
+  const [source, setSource] = useState<string>("");
+  const [rating, setRating] = useState<string>("");
+  const [limit, setLimit] = useState(50);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return REVIEWS.filter((r) => {
+      if (source && r.source !== source) return false;
+      if (rating && String(r.rating ?? "") !== rating) return false;
+      if (q && !r.text.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [query, source, rating]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setLimit(50);
+          }}
+          placeholder="Search reviews…"
+          className="min-w-[220px] flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        />
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All sources</option>
+          {sources.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select
+          value={rating}
+          onChange={(e) => setRating(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All ratings</option>
+          {["5", "4", "3", "2", "1"].map((r) => (
+            <option key={r} value={r}>
+              {r}★
+            </option>
+          ))}
+        </select>
+        <span className="text-sm text-muted-foreground">{filtered.length} matches</span>
+      </div>
+
+      <div className="space-y-3">
+        {filtered.slice(0, limit).map((r) => (
+          <ReviewCard key={r.id} review={r} highlight={query} />
+        ))}
+        {filtered.length > limit && (
+          <button
+            onClick={() => setLimit((n) => n + 50)}
+            className="w-full rounded-md border border-border bg-card py-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Load more
+          </button>
         )}
       </div>
     </div>
   );
 }
+
+function ReviewCard({ review, highlight }: { review: Review; highlight?: string }) {
+  const text = review.text;
+  let body: React.ReactNode = text;
+  if (highlight && highlight.trim()) {
+    const h = highlight.trim();
+    const re = new RegExp(`(${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig");
+    const parts = text.split(re);
+    body = parts.map((p, i) =>
+      re.test(p) ? (
+        <mark key={i} className="bg-warning/30 text-foreground">
+          {p}
+        </mark>
+      ) : (
+        <span key={i}>{p}</span>
+      ),
+    );
+  }
+  const ratingColor =
+    review.rating == null
+      ? "text-muted-foreground"
+      : review.rating >= 4
+        ? "text-success"
+        : review.rating === 3
+          ? "text-warning"
+          : "text-danger";
+  return (
+    <article className="rounded-lg border border-border bg-card p-4 text-sm">
+      <header className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="rounded bg-muted px-2 py-0.5">{review.source}</span>
+        <span className={ratingColor}>{review.rating == null ? "—" : `${review.rating}★`}</span>
+        {review.username && <span>· {review.username}</span>}
+        {review.date && <span>· {review.date}</span>}
+        <span className="ml-auto font-mono opacity-60">{review.id.slice(0, 8)}</span>
+      </header>
+      <p className="leading-relaxed">{body}</p>
+    </article>
+  );
+}
+
+// ─────────────────────────── AI Insights ───────────────────────────
+
+type Insight = {
+  question: string;
+  answer: string;
+  citedIds: string[];
+  contextSize: number;
+  error?: string;
+};
+
+function AIInsights({ sources }: { sources: string[] }) {
+  const [question, setQuestion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [insight, setInsight] = useState<Insight | null>(null);
+  const [filterSource, setFilterSource] = useState<string>("");
+
+  async function ask(q: string) {
+    if (!q.trim() || loading) return;
+    setLoading(true);
+    setInsight(null);
+    try {
+      const pool = filterSource
+        ? REVIEWS.filter((r) => r.source === filterSource)
+        : REVIEWS;
+      const top = retrieveRelevant(q, pool, 60);
+      const agg = aggregate(pool);
+
+      const contextLines = top.map(
+        ({ review }) =>
+          `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) ${review.text.slice(0, 600)}`,
+      );
+
+      const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
+You will be given a question and a sample of real user reviews (most-relevant first), plus aggregate statistics.
+Your job:
+- Synthesize a clear, evidence-based answer to the question.
+- Surface concrete themes, pain points, and unmet needs.
+- When you make a claim, cite supporting reviews by their bracketed ID, e.g. [AS51776]. Cite 3–8 IDs total.
+- If the sample is insufficient to answer, say so explicitly.
+- Output well-structured markdown with short headings and bullets. No preamble.`;
+
+      const user = `Question: ${q}
+
+Dataset scope: ${agg.total} reviews across ${Object.keys(agg.bySource).join(", ")}.
+Rating distribution: ${JSON.stringify(agg.byRating)}.
+Avg rating by source: ${JSON.stringify(agg.avgBySource)}.
+
+Most relevant reviews (id, source, rating, text):
+${contextLines.join("\n")}`;
+
+      const res = await chatCompletion({
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: 1800,
+        temperature: 0.3,
+      });
+
+      const answer: string = res?.choices?.[0]?.message?.content ?? "";
+      const cited = Array.from(
+        new Set(
+          (answer.match(/\[([A-Za-z0-9\-]{4,})\]/g) ?? []).map((m) => m.slice(1, -1)),
+        ),
+      );
+      setInsight({
+        question: q,
+        answer: answer || "(empty response)",
+        citedIds: cited,
+        contextSize: top.length,
+      });
+    } catch (e) {
+      setInsight({
+        question: q,
+        answer: "",
+        citedIds: [],
+        contextSize: 0,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="font-display text-lg">Ask the reviews</h2>
+            <select
+              value={filterSource}
+              onChange={(e) => setFilterSource(e.target.value)}
+              className="ml-auto rounded-md border border-border bg-background px-2 py-1 text-xs"
+            >
+              <option value="">All sources</option>
+              {sources.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") ask(question);
+              }}
+              placeholder="e.g. What are the most common frustrations with recommendations?"
+              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              onClick={() => ask(question)}
+              disabled={loading || !question.trim()}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            >
+              {loading ? "Analyzing…" : "Analyze"}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Retrieves the most relevant reviews from the dataset and sends them to the model with
+            aggregate stats. Answers cite review IDs.
+          </p>
+        </div>
+
+        {insight && (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="mb-2 text-xs text-muted-foreground">
+              Q · {insight.question}
+              {insight.contextSize > 0 && ` · ${insight.contextSize} reviews in context`}
+            </div>
+            {insight.error ? (
+              <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+                {insight.error}
+              </div>
+            ) : (
+              <>
+                <Markdownish text={insight.answer} />
+                {insight.citedIds.length > 0 && (
+                  <div className="mt-5 border-t border-border pt-4">
+                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
+                      Cited reviews
+                    </div>
+                    <div className="space-y-2">
+                      {insight.citedIds.map((id) => {
+                        const r = REVIEWS.find((x) => x.id === id);
+                        if (!r) return null;
+                        return <ReviewCard key={id} review={r} />;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <aside className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h3 className="mb-3 font-display text-base">Suggested questions</h3>
+          <div className="space-y-2">
+            {SUGGESTED_QUESTIONS.map((q) => (
+              <button
+                key={q}
+                onClick={() => {
+                  setQuestion(q);
+                  ask(q);
+                }}
+                disabled={loading}
+                className="block w-full rounded-md border border-border bg-background px-3 py-2 text-left text-sm text-muted-foreground hover:border-primary/60 hover:text-foreground disabled:opacity-50"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
+          <div className="mb-1 font-medium text-foreground">How it works</div>
+          Each question is matched against all {REVIEWS.length} reviews via keyword scoring; the top
+          ~60 most-relevant reviews and aggregate stats are sent to claude-sonnet-4 via OpenRouter.
+          The model must cite review IDs, shown below the answer.
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// Minimal markdown-ish renderer: headings, bullets, bold, code-ids
+function Markdownish({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const out: React.ReactNode[] = [];
+  let listBuf: string[] = [];
+  const flushList = () => {
+    if (listBuf.length) {
+      out.push(
+        <ul key={`ul-${out.length}`} className="mb-3 ml-5 list-disc space-y-1 text-sm">
+          {listBuf.map((l, i) => (
+            <li key={i}>{renderInline(l)}</li>
+          ))}
+        </ul>,
+      );
+      listBuf = [];
+    }
+  };
+  lines.forEach((raw, i) => {
+    const line = raw.trimEnd();
+    if (/^#{1,3}\s+/.test(line)) {
+      flushList();
+      const level = line.match(/^#+/)![0].length;
+      const content = line.replace(/^#+\s+/, "");
+      const cls =
+        level === 1
+          ? "font-display text-xl mt-4 mb-2"
+          : level === 2
+            ? "font-display text-lg mt-4 mb-2"
+            : "font-medium mt-3 mb-1";
+      out.push(
+        <div key={i} className={cls}>
+          {renderInline(content)}
+        </div>,
+      );
+    } else if (/^\s*[-*]\s+/.test(line)) {
+      listBuf.push(line.replace(/^\s*[-*]\s+/, ""));
+    } else if (line.trim() === "") {
+      flushList();
+    } else {
+      flushList();
+      out.push(
+        <p key={i} className="mb-2 text-sm leading-relaxed">
+          {renderInline(line)}
+        </p>,
+      );
+    }
+  });
+  flushList();
+  return <div>{out}</div>;
+}
+
+function renderInline(s: string): React.ReactNode {
+  // bold **x**, code `x`, ids [XYZ]
+  const parts: React.ReactNode[] = [];
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[A-Za-z0-9\-]{4,}\])/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = re.exec(s))) {
+    if (m.index > last) parts.push(s.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith("**")) {
+      parts.push(
+        <strong key={key++} className="font-semibold text-foreground">
+          {tok.slice(2, -2)}
+        </strong>,
+      );
+    } else if (tok.startsWith("`")) {
+      parts.push(
+        <code key={key++} className="rounded bg-muted px-1 font-mono text-xs">
+          {tok.slice(1, -1)}
+        </code>,
+      );
+    } else {
+      parts.push(
+        <span
+          key={key++}
+          className="rounded bg-primary/15 px-1 font-mono text-xs text-primary"
+        >
+          {tok.slice(1, -1)}
+        </span>,
+      );
+    }
+    last = m.index + tok.length;
+  }
+  if (last < s.length) parts.push(s.slice(last));
+  return parts;
+}
+
+// Force re-import-side effect for useEffect (no-op kept for HMR friendliness)
+void useEffect;
