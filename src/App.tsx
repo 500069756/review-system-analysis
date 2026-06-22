@@ -261,7 +261,7 @@ export default function App() {
 
       <footer className="border-t border-border bg-sidebar">
         <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-muted-foreground">
-          Powered by OpenRouter · claude-sonnet-4 · client-side retrieval over {agg.total} reviews
+          Powered by Groq · llama-3.3-70b-versatile · client-side retrieval over {agg.total} reviews
         </div>
       </footer>
     </div>
