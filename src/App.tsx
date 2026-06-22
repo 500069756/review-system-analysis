@@ -548,13 +548,19 @@ Your job:
 - When you make a claim, cite supporting reviews by their bracketed ID, e.g. [AS51776]. Cite 3–8 IDs total.
 - If the sample is insufficient to answer, say so explicitly.
 - Output well-structured markdown with short headings and bullets. No preamble.`;
+    const topTopics = countField(pool, "topic", 10);
+    const topPains = countField(pool, "pain", 10);
+    const sentiment = sentimentMix(pool);
     const user = `Question: ${q}
 
 Dataset scope: ${agg.total} reviews across ${Object.keys(agg.bySource).join(", ")}.
 Rating distribution: ${JSON.stringify(agg.byRating)}.
 Avg rating by source: ${JSON.stringify(agg.avgBySource)}.
+Sentiment mix: ${JSON.stringify(sentiment)}.
+Top topics (pre-classified): ${topTopics.map((t) => `${t.label} (${t.count})`).join("; ")}.
+Top pain points (pre-classified): ${topPains.map((t) => `${t.label} (${t.count})`).join("; ")}.
 
-Most relevant reviews (id, source, rating, text):
+Most relevant reviews (id, source, rating, {classification tags}, text):
 ${contextLines.join("\n")}`;
     try {
       const res = await chatCompletion({
