@@ -37,33 +37,33 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Midnight Indigo — dark default */
+/* Spotify — dark default */
 :root {
   --radius: 0.875rem;
 
-  --background: oklch(0.14 0.04 275);
-  --foreground: oklch(0.97 0.01 270);
-  --sidebar: oklch(0.11 0.04 275);
-  --card: oklch(0.18 0.045 275);
-  --card-foreground: oklch(0.97 0.01 270);
-  --muted: oklch(0.24 0.04 275);
-  --muted-foreground: oklch(0.7 0.025 270);
-  --border: oklch(0.27 0.04 275);
-  --border-strong: oklch(0.38 0.05 275);
+  --background: oklch(0.13 0.005 150);
+  --foreground: oklch(0.98 0.005 150);
+  --sidebar: oklch(0.08 0.005 150);
+  --card: oklch(0.17 0.008 150);
+  --card-foreground: oklch(0.98 0.005 150);
+  --muted: oklch(0.22 0.01 150);
+  --muted-foreground: oklch(0.72 0.015 150);
+  --border: oklch(0.26 0.01 150);
+  --border-strong: oklch(0.4 0.02 150);
 
-  --primary: oklch(0.66 0.21 275);          /* electric indigo */
-  --primary-foreground: oklch(0.98 0.005 275);
-  --primary-glow: oklch(0.76 0.19 290);
-  --accent: oklch(0.78 0.16 200);            /* cyan accent */
-  --accent-foreground: oklch(0.14 0.03 275);
+  --primary: oklch(0.72 0.19 148);            /* Spotify green */
+  --primary-foreground: oklch(0.13 0.005 150);
+  --primary-glow: oklch(0.82 0.18 148);
+  --accent: oklch(0.72 0.19 148);
+  --accent-foreground: oklch(0.13 0.005 150);
 
-  --success: oklch(0.78 0.17 155);
+  --success: oklch(0.72 0.19 148);
   --warning: oklch(0.83 0.16 78);
   --danger: oklch(0.7 0.22 22);
-  --ring: oklch(0.66 0.21 275);
+  --ring: oklch(0.72 0.19 148);
 
   --source-appstore: oklch(0.72 0.18 240);
-  --source-play: oklch(0.78 0.17 150);
+  --source-play: oklch(0.72 0.19 148);
   --source-youtube: oklch(0.7 0.22 22);
   --source-social: oklch(0.85 0.01 270);
 }
@@ -126,8 +126,8 @@
   }
   body {
     background-image:
-      radial-gradient(1200px 600px at 90% -10%, oklch(0.66 0.21 275 / 0.18), transparent 60%),
-      radial-gradient(900px 500px at -10% 10%, oklch(0.78 0.16 200 / 0.12), transparent 60%);
+      radial-gradient(1200px 600px at 90% -10%, oklch(0.72 0.19 148 / 0.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, oklch(0.72 0.19 148 / 0.08), transparent 60%);
     background-attachment: fixed;
   }
   .light body {

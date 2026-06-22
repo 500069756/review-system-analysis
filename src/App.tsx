@@ -143,6 +143,20 @@ const SENTIMENT_TONE: Record<string, { dot: string; text: string; bg: string }> 
   Unknown: { dot: "bg-muted-foreground/40", text: "text-muted-foreground", bg: "bg-muted" },
 };
 
+// ─────────────────────────── Spotify icon ───────────────────────────
+function SpotifyIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.52 17.34a.75.75 0 0 1-1.03.25c-2.82-1.72-6.36-2.11-10.54-1.16a.75.75 0 1 1-.33-1.46c4.56-1.04 8.49-.59 11.66 1.34.36.22.47.69.24 1.03zm1.47-3.27a.94.94 0 0 1-1.29.31c-3.23-1.99-8.16-2.57-11.98-1.41a.94.94 0 1 1-.55-1.8c4.37-1.33 9.8-.68 13.51 1.6.44.27.58.85.31 1.3zm.13-3.41C15.25 8.4 8.9 8.18 5.27 9.28a1.13 1.13 0 1 1-.65-2.16c4.17-1.27 11.18-1.02 15.59 1.6a1.13 1.13 0 1 1-1.09 1.94z" />
+    </svg>
+  );
+}
+
 // ─────────────────────────── App shell ───────────────────────────
 
 type Tab = "overview" | "themes" | "explorer" | "ai";
@@ -195,14 +209,11 @@ function Sidebar({
     <aside className="sticky top-8 hidden h-[calc(100vh-4rem)] w-64 shrink-0 flex-col justify-between rounded-2xl border border-border bg-sidebar/80 p-5 backdrop-blur lg:flex">
       <div>
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-glow">
-            <span className="font-display text-lg font-semibold text-primary-foreground">R</span>
-            <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-sidebar bg-accent" />
-          </div>
+          <SpotifyIcon className="h-10 w-10 text-primary" />
           <div>
-            <div className="font-display text-base leading-tight">Review</div>
+            <div className="font-display text-base font-semibold leading-tight">Spotify</div>
             <div className="font-display text-base leading-tight text-muted-foreground">
-              Intelligence
+              Review Analysis
             </div>
           </div>
         </div>
@@ -276,22 +287,22 @@ function TopHero({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="chip mb-3 w-fit">
-            <span className="pulse-dot" />
-            Multi-source feedback intelligence
+            <SpotifyIcon className="h-3.5 w-3.5 text-primary" />
+            Spotify feedback intelligence
           </div>
-          <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-            Listen to <span className="italic text-primary-glow">every review</span>,
-            <br className="hidden md:block" /> answer the questions that matter.
-          </h1>
+          <div className="flex items-center gap-4">
+            <SpotifyIcon className="hidden h-12 w-12 shrink-0 text-primary lg:block" />
+            <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
+              Spotify Review <span className="italic text-primary">Analysis System</span>
+            </h1>
+          </div>
           <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-            {agg.total.toLocaleString()} reviews from {sources.length} channels — pre-classified
-            across sentiment, topic, pain points, user goals, listening behavior, and product
-            opportunities.
+            {agg.total.toLocaleString()} Spotify reviews from {sources.length} channels —
+            pre-classified across sentiment, topic, pain points, listener goals, behavior, and
+            product opportunities.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2 lg:hidden">
-          {/* mobile nav is handled by Sidebar on desktop; surface a compact selector here */}
-        </div>
+        <div className="flex flex-wrap gap-2 lg:hidden" />
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
