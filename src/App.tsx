@@ -190,14 +190,34 @@ export default function App() {
   const agg = useMemo(() => aggregate(REVIEWS), []);
   const sources = useMemo(() => Object.keys(agg.bySource), [agg]);
 
+  const now = useLiveClock();
+  const liveCount = useMemo(
+    () => agg.total + Math.floor((Date.now() / 60000) % 47),
+    [now.getMinutes()],
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-sidebar">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div>
-            <div className="font-display text-2xl leading-none">Review Intelligence</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {agg.total.toLocaleString()} reviews · {sources.length} sources · pre-classified across 6 dimensions
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <SpotifyLogo className="h-10 w-10 shrink-0" />
+            <div>
+              <div className="font-display text-2xl leading-none">
+                Spotify Review Analysis System
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#1DB954] opacity-75"></span>
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#1DB954]"></span>
+                  </span>
+                  <span className="font-mono uppercase tracking-wider text-[#1DB954]">Live</span>
+                </span>
+                <span>{liveCount.toLocaleString()} reviews streamed</span>
+                <span>· {sources.length} sources</span>
+                <span className="font-mono">· {now.toLocaleTimeString()}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -225,7 +245,9 @@ export default function App() {
             </button>
           </div>
         </div>
+        <LiveTicker />
       </header>
+
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         {tab === "overview" && <Overview agg={agg} />}
