@@ -10,6 +10,12 @@ type Review = {
   text: string;
   date: string | null;
   username?: string | null;
+  sentiment?: string;
+  topic?: string;
+  pain?: string;
+  goal?: string;
+  behavior?: string;
+  opportunity?: string;
 };
 
 const REVIEWS = reviewsData as Review[];
