@@ -143,6 +143,20 @@ const SENTIMENT_TONE: Record<string, { dot: string; text: string; bg: string }> 
   Unknown: { dot: "bg-muted-foreground/40", text: "text-muted-foreground", bg: "bg-muted" },
 };
 
+// ─────────────────────────── Spotify icon ───────────────────────────
+function SpotifyIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.52 17.34a.75.75 0 0 1-1.03.25c-2.82-1.72-6.36-2.11-10.54-1.16a.75.75 0 1 1-.33-1.46c4.56-1.04 8.49-.59 11.66 1.34.36.22.47.69.24 1.03zm1.47-3.27a.94.94 0 0 1-1.29.31c-3.23-1.99-8.16-2.57-11.98-1.41a.94.94 0 1 1-.55-1.8c4.37-1.33 9.8-.68 13.51 1.6.44.27.58.85.31 1.3zm.13-3.41C15.25 8.4 8.9 8.18 5.27 9.28a1.13 1.13 0 1 1-.65-2.16c4.17-1.27 11.18-1.02 15.59 1.6a1.13 1.13 0 1 1-1.09 1.94z" />
+    </svg>
+  );
+}
+
 // ─────────────────────────── App shell ───────────────────────────
 
 type Tab = "overview" | "themes" | "explorer" | "ai";
