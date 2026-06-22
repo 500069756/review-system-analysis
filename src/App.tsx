@@ -403,6 +403,34 @@ function Themes() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
+      <div className="lg:col-span-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card/60 px-4 py-3 text-xs">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#1DB954] opacity-75"></span>
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#1DB954]"></span>
+          </span>
+          <span className="font-mono uppercase tracking-wider text-[#1DB954]">
+            Live themes
+          </span>
+          <span className="text-muted-foreground">
+            recomputing as reviews stream in
+          </span>
+        </div>
+        <div className="flex items-center gap-3 text-muted-foreground">
+          <span>
+            <strong className="text-foreground">{ingested.toLocaleString()}</strong> /{" "}
+            {total.toLocaleString()} ingested
+          </span>
+          <div className="h-1.5 w-32 overflow-hidden rounded bg-muted">
+            <div
+              className="h-full bg-[#1DB954] transition-all duration-700"
+              style={{ width: `${(ingested / total) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+
       <Card title="Sentiment mix" className="lg:col-span-2">
         <div className="flex h-3 w-full overflow-hidden rounded">
           {Object.entries(sentiment)
