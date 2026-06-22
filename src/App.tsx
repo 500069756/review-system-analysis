@@ -528,10 +528,18 @@ function AIInsights({ sources }: { sources: string[] }) {
   async function analyzeQuestion(q: string, pool: Review[]): Promise<Insight> {
     const top = retrieveRelevant(q, pool, 60);
     const agg = aggregate(pool);
-    const contextLines = top.map(
-      ({ review }) =>
-        `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) ${review.text.slice(0, 600)}`,
-    );
+    const contextLines = top.map(({ review }) => {
+      const tags = [
+        review.sentiment && `sent:${review.sentiment}`,
+        review.topic && `topic:${review.topic}`,
+        review.pain && `pain:${review.pain}`,
+        review.goal && `goal:${review.goal}`,
+        review.behavior && `behavior:${review.behavior}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      return `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) {${tags}} ${review.text.slice(0, 500)}`;
+    });
     const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
 You will be given a question and a sample of real user reviews (most-relevant first), plus aggregate statistics.
 Your job:
