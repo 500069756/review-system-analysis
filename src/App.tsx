@@ -146,7 +146,7 @@ export default function App() {
           <div>
             <div className="font-display text-2xl leading-none">Review Intelligence</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {agg.total.toLocaleString()} reviews · {sources.length} sources · AI-powered analysis
+              {agg.total.toLocaleString()} reviews · {sources.length} sources · pre-classified across 6 dimensions
             </div>
           </div>
           <div className="flex items-center gap-2">
