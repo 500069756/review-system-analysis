@@ -9,179 +9,87 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 10px);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-sidebar: var(--sidebar);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
-  --color-primary-glow: var(--primary-glow);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-ring: var(--ring);
-  --color-source-appstore: var(--source-appstore);
-  --color-source-play: var(--source-play);
-  --color-source-youtube: var(--source-youtube);
-  --color-source-social: var(--source-social);
-  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Instrument Serif", serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Spotify — dark default */
 :root {
-  --radius: 0.875rem;
-
-  --background: oklch(0.13 0.005 150);
-  --foreground: oklch(0.98 0.005 150);
-  --sidebar: oklch(0.08 0.005 150);
-  --card: oklch(0.17 0.008 150);
-  --card-foreground: oklch(0.98 0.005 150);
-  --muted: oklch(0.22 0.01 150);
-  --muted-foreground: oklch(0.72 0.015 150);
-  --border: oklch(0.26 0.01 150);
-  --border-strong: oklch(0.4 0.02 150);
-
-  --primary: oklch(0.72 0.19 148);            /* Spotify green */
-  --primary-foreground: oklch(0.13 0.005 150);
-  --primary-glow: oklch(0.82 0.18 148);
-  --accent: oklch(0.72 0.19 148);
-  --accent-foreground: oklch(0.13 0.005 150);
-
-  --success: oklch(0.72 0.19 148);
-  --warning: oklch(0.83 0.16 78);
-  --danger: oklch(0.7 0.22 22);
-  --ring: oklch(0.72 0.19 148);
-
-  --source-appstore: oklch(0.72 0.18 240);
-  --source-play: oklch(0.72 0.19 148);
-  --source-youtube: oklch(0.7 0.22 22);
-  --source-social: oklch(0.85 0.01 270);
+  --radius: 0.75rem;
+  --background: oklch(0.145 0.005 270);
+  --foreground: oklch(0.97 0.003 270);
+  --sidebar: oklch(0.115 0.005 270);
+  --card: oklch(0.19 0.006 270);
+  --card-foreground: oklch(0.97 0.003 270);
+  --muted: oklch(0.23 0.006 270);
+  --muted-foreground: oklch(0.66 0.012 270);
+  --border: oklch(0.27 0.008 270);
+  --primary: oklch(0.72 0.14 155);
+  --primary-foreground: oklch(0.14 0.01 155);
+  --accent: oklch(0.72 0.14 200);
+  --accent-foreground: oklch(0.15 0.02 200);
+  --success: oklch(0.74 0.16 150);
+  --warning: oklch(0.82 0.16 78);
+  --danger: oklch(0.68 0.21 25);
+  --ring: oklch(0.72 0.14 155);
 }
 
 .light {
-  --background: oklch(0.985 0.005 270);
-  --foreground: oklch(0.18 0.04 275);
-  --sidebar: oklch(0.97 0.01 275);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.04 275);
-  --muted: oklch(0.95 0.01 270);
-  --muted-foreground: oklch(0.45 0.03 270);
-  --border: oklch(0.9 0.015 270);
-  --border-strong: oklch(0.78 0.025 270);
-
-  --primary: oklch(0.5 0.22 275);
-  --primary-foreground: oklch(0.99 0.003 275);
-  --primary-glow: oklch(0.62 0.2 290);
-  --accent: oklch(0.5 0.16 200);
-  --accent-foreground: oklch(0.99 0.005 270);
-
+  --background: oklch(0.98 0.002 270);
+  --foreground: oklch(0.2 0.005 270);
+  --sidebar: oklch(0.96 0.003 270);
+  --card: oklch(0.97 0.003 270);
+  --card-foreground: oklch(0.2 0.005 270);
+  --muted: oklch(0.92 0.005 270);
+  --muted-foreground: oklch(0.55 0.012 270);
+  --border: oklch(0.88 0.008 270);
+  --primary: oklch(0.55 0.14 155);
+  --primary-foreground: oklch(0.98 0.005 270);
+  --accent: oklch(0.55 0.14 200);
+  --accent-foreground: oklch(0.98 0.005 270);
   --success: oklch(0.55 0.16 150);
-  --warning: oklch(0.62 0.16 78);
-  --danger: oklch(0.55 0.2 22);
-  --ring: oklch(0.5 0.22 275);
-
-  --source-appstore: oklch(0.55 0.2 240);
-  --source-play: oklch(0.55 0.17 150);
-  --source-youtube: oklch(0.55 0.22 22);
-  --source-social: oklch(0.35 0.02 270);
+  --warning: oklch(0.6 0.16 78);
+  --danger: oklch(0.55 0.18 25);
+  --ring: oklch(0.55 0.14 155);
 }
 
 @layer base {
   @font-face {
-    font-family: "Space Grotesk";
-    src: url("https://fonts.gstatic.com/s/spacegrotesk/v16/V8mDoQDjQSkFtoMM3T6r8E7mF71Q-gOoraIAEj7oUUxjLA.woff2") format("woff2");
-    font-weight: 300 700;
-    font-display: swap;
-  }
-  @font-face {
-    font-family: "DM Sans";
-    src: url("https://fonts.gstatic.com/s/dmsans/v15/rP2Hp2ywxg089UriCZOIHTWEBlw.woff2") format("woff2");
-    font-weight: 100 1000;
+    font-family: "Instrument Serif";
+    src: url("https://fonts.gstatic.com/s/instrumentserif/v4/jizDREVItHgc8qDIbSTKq4XKVUMYoQ.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
     font-display: swap;
   }
   @font-face {
     font-family: "JetBrains Mono";
     src: url("https://fonts.gstatic.com/s/jetbrainsmono/v20/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPVmUsaaDhw.woff2") format("woff2");
     font-weight: 400;
+    font-style: normal;
     font-display: swap;
   }
 
-  * { border-color: var(--color-border); }
+  * {
+    border-color: var(--color-border);
+  }
   html, body {
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: var(--font-sans);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
-    font-feature-settings: "ss01", "cv11";
-  }
-  body {
-    background-image:
-      radial-gradient(1200px 600px at 90% -10%, oklch(0.72 0.19 148 / 0.18), transparent 60%),
-      radial-gradient(900px 500px at -10% 10%, oklch(0.72 0.19 148 / 0.08), transparent 60%);
-    background-attachment: fixed;
-  }
-  .light body {
-    background-image:
-      radial-gradient(1200px 600px at 90% -10%, oklch(0.5 0.22 275 / 0.1), transparent 60%),
-      radial-gradient(900px 500px at -10% 10%, oklch(0.5 0.16 200 / 0.08), transparent 60%);
-  }
-  .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
-  .font-mono { font-family: var(--font-mono); }
-}
-
-@layer utilities {
-  .panel {
-    background-color: var(--color-card);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-2xl);
-    box-shadow:
-      0 1px 0 0 oklch(1 0 0 / 0.04) inset,
-      0 30px 60px -30px oklch(0 0 0 / 0.6);
-  }
-  .light .panel {
-    box-shadow:
-      0 1px 0 0 oklch(1 0 0 / 0.6) inset,
-      0 20px 40px -24px oklch(0.2 0.05 275 / 0.18);
-  }
-  .panel-glow {
-    background:
-      linear-gradient(180deg, oklch(0.66 0.21 275 / 0.08), oklch(0.66 0.21 275 / 0) 60%),
-      var(--color-card);
-    border: 1px solid oklch(0.66 0.21 275 / 0.35);
-  }
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    border-radius: 9999px;
-    border: 1px solid var(--color-border);
-    background: var(--color-muted);
-    padding: 0.25rem 0.625rem;
-    font-size: 0.75rem;
-    line-height: 1;
-    color: var(--color-muted-foreground);
-  }
-  .pulse-dot {
-    width: 6px; height: 6px; border-radius: 9999px;
-    background: var(--color-primary);
-    box-shadow: 0 0 0 4px oklch(0.66 0.21 275 / 0.18);
-  }
-  .grid-overlay {
-    background-image:
-      linear-gradient(var(--color-border) 1px, transparent 1px),
-      linear-gradient(90deg, var(--color-border) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: radial-gradient(ellipse at top, black 30%, transparent 70%);
-    opacity: 0.25;
   }
 }

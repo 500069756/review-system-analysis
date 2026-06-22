@@ -44,24 +44,28 @@ type Scored = { review: Review; score: number };
 function retrieveRelevant(query: string, pool: Review[], k = 60): Scored[] {
   const qTokens = Array.from(new Set(tokenize(query)));
   if (qTokens.length === 0) {
+    // fallback: random-ish sample
     return pool.slice(0, k).map((r) => ({ review: r, score: 0 }));
   }
   const scored: Scored[] = pool.map((r) => {
     const text = r.text.toLowerCase();
     let score = 0;
     for (const t of qTokens) {
+      // term frequency
       let idx = 0;
       while ((idx = text.indexOf(t, idx)) !== -1) {
         score += 1;
         idx += t.length;
       }
     }
+    // gentle boost for low-rating reviews when query mentions frustration/problem words
     if (r.rating !== null && r.rating <= 2) score *= 1.05;
     return { review: r, score };
   });
   scored.sort((a, b) => b.score - a.score);
   const top = scored.filter((s) => s.score > 0).slice(0, k);
   if (top.length >= 10) return top;
+  // pad with sample
   const rest = scored.filter((s) => s.score === 0).slice(0, k - top.length);
   return [...top, ...rest];
 }
@@ -86,7 +90,7 @@ function aggregate(pool: Review[]) {
   return { total: pool.length, bySource, byRating, avgBySource };
 }
 
-function topKeywords(pool: Review[], n = 30) {
+function topKeywords(pool: Review[], n = 30): { term: string; count: number }[] {
   const counts: Record<string, number> = {};
   for (const r of pool) {
     const seen = new Set<string>();
@@ -124,274 +128,66 @@ function sentimentMix(pool: Review[]) {
   return m;
 }
 
-// Source palette mapping
-const SOURCE_META: Record<string, { color: string; bg: string; label: string; initial: string }> = {
-  "App Store": { color: "text-source-appstore", bg: "bg-source-appstore", label: "App Store", initial: "" },
-  "Google Play": { color: "text-source-play", bg: "bg-source-play", label: "Google Play", initial: "" },
-  "YouTube": { color: "text-source-youtube", bg: "bg-source-youtube", label: "YouTube", initial: "" },
-  "Social Media (X)": { color: "text-source-social", bg: "bg-source-social", label: "X / Social", initial: "X" },
-};
-function sourceMeta(s: string) {
-  return SOURCE_META[s] ?? { color: "text-muted-foreground", bg: "bg-muted-foreground", label: s, initial: "" };
-}
-
-const SENTIMENT_TONE: Record<string, { dot: string; text: string; bg: string }> = {
-  Positive: { dot: "bg-success", text: "text-success", bg: "bg-success/15" },
-  Negative: { dot: "bg-danger", text: "text-danger", bg: "bg-danger/15" },
-  Mixed: { dot: "bg-warning", text: "text-warning", bg: "bg-warning/15" },
-  Neutral: { dot: "bg-muted-foreground", text: "text-muted-foreground", bg: "bg-muted" },
-  Unknown: { dot: "bg-muted-foreground/40", text: "text-muted-foreground", bg: "bg-muted" },
-};
-
-// ─────────────────────────── Spotify icon ───────────────────────────
-function SpotifyIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-      className={className}
-    >
-      <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.52 17.34a.75.75 0 0 1-1.03.25c-2.82-1.72-6.36-2.11-10.54-1.16a.75.75 0 1 1-.33-1.46c4.56-1.04 8.49-.59 11.66 1.34.36.22.47.69.24 1.03zm1.47-3.27a.94.94 0 0 1-1.29.31c-3.23-1.99-8.16-2.57-11.98-1.41a.94.94 0 1 1-.55-1.8c4.37-1.33 9.8-.68 13.51 1.6.44.27.58.85.31 1.3zm.13-3.41C15.25 8.4 8.9 8.18 5.27 9.28a1.13 1.13 0 1 1-.65-2.16c4.17-1.27 11.18-1.02 15.59 1.6a1.13 1.13 0 1 1-1.09 1.94z" />
-    </svg>
-  );
-}
-
-// ─────────────────────────── App shell ───────────────────────────
+// ─────────────────────────── UI ───────────────────────────
 
 type Tab = "overview" | "themes" | "explorer" | "ai";
-
-const TABS: { id: Tab; label: string; desc: string }[] = [
-  { id: "overview", label: "Overview", desc: "Volume, ratings, vocabulary" },
-  { id: "themes", label: "Themes", desc: "Pre-classified dimensions" },
-  { id: "explorer", label: "Explorer", desc: "Search & filter reviews" },
-  { id: "ai", label: "AI Insights", desc: "Ask grounded questions" },
-];
 
 export default function App() {
   const { theme, toggle: toggleTheme } = useTheme();
   const [tab, setTab] = useState<Tab>("overview");
+
   const agg = useMemo(() => aggregate(REVIEWS), []);
   const sources = useMemo(() => Object.keys(agg.bySource), [agg]);
-  const sentiment = useMemo(() => sentimentMix(REVIEWS), []);
-  const negPct = Math.round(((sentiment["Negative"] ?? 0) / REVIEWS.length) * 100);
-  const topTopic = useMemo(() => countField(REVIEWS, "topic", 1)[0], []);
 
   return (
-    <div className="relative min-h-screen text-foreground">
-      <div className="pointer-events-none fixed inset-0 grid-overlay" aria-hidden />
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1400px] gap-8 px-6 py-8 lg:flex-row">
-        <Sidebar tab={tab} setTab={setTab} theme={theme} toggle={toggleTheme} />
-        <main className="flex-1 space-y-8 pb-12">
-          <TopHero agg={agg} negPct={negPct} topTopic={topTopic?.label} sentiment={sentiment} />
-          <MobileTabs tab={tab} setTab={setTab} />
-          {tab === "overview" && <Overview agg={agg} />}
-          {tab === "themes" && <Themes />}
-          {tab === "explorer" && <Explorer sources={sources} />}
-          {tab === "ai" && <AIInsights sources={sources} />}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-function MobileTabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
-  return (
-    <nav className="panel flex gap-1 overflow-x-auto p-1.5 lg:hidden">
-      {TABS.map((t) => {
-        const active = tab === t.id;
-        return (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium transition ${
-              active
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t.label}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
-
-function Sidebar({
-  tab,
-  setTab,
-  theme,
-  toggle,
-}: {
-  tab: Tab;
-  setTab: (t: Tab) => void;
-  theme: string;
-  toggle: () => void;
-}) {
-  return (
-    <aside className="sticky top-8 hidden h-[calc(100vh-4rem)] w-64 shrink-0 flex-col justify-between rounded-2xl border border-border bg-sidebar/80 p-5 backdrop-blur lg:flex">
-      <div>
-        <div className="flex items-center gap-3">
-          <SpotifyIcon className="h-10 w-10 text-primary" />
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border bg-sidebar">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div>
-            <div className="font-display text-base font-semibold leading-tight">Spotify</div>
-            <div className="font-display text-base leading-tight text-muted-foreground">
-              Review Analysis
+            <div className="font-display text-2xl leading-none">Review Intelligence</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {agg.total.toLocaleString()} reviews · {sources.length} sources · pre-classified across 6 dimensions
             </div>
           </div>
-        </div>
-
-        <div className="mt-6 chip">
-          <span className="pulse-dot" />
-          {REVIEWS.length.toLocaleString()} reviews indexed
-        </div>
-
-        <nav className="mt-8 space-y-1">
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`group w-full rounded-xl border px-3 py-2.5 text-left transition ${
-                  active
-                    ? "border-primary/40 bg-primary/10 text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:bg-muted/40 hover:text-foreground"
-                }`}
-              >
-                <div className="flex items-center justify-between text-sm font-medium">
-                  <span>{t.label}</span>
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full transition ${
-                      active ? "bg-primary" : "bg-transparent group-hover:bg-border-strong"
-                    }`}
-                  />
-                </div>
-                <div className="mt-0.5 text-xs text-muted-foreground/80">{t.desc}</div>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      <div className="space-y-3">
-        <button
-          onClick={toggle}
-          className="flex w-full items-center justify-between rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <span>Theme</span>
-          <span className="font-mono uppercase tracking-wider">
-            {theme === "dark" ? "Dark" : "Light"}
-          </span>
-        </button>
-        <div className="rounded-xl border border-border bg-muted/30 p-3 text-[11px] leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">claude-sonnet-4</span> via OpenRouter ·
-          client-side retrieval over the corpus.
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function TopHero({
-  agg,
-  negPct,
-  topTopic,
-  sentiment,
-}: {
-  agg: ReturnType<typeof aggregate>;
-  negPct: number;
-  topTopic?: string;
-  sentiment: Record<string, number>;
-}) {
-  const sources = Object.keys(agg.bySource);
-  return (
-    <header className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <div className="chip mb-3 w-fit">
-            <SpotifyIcon className="h-3.5 w-3.5 text-primary" />
-            Spotify feedback intelligence
+          <div className="flex items-center gap-2">
+            <nav className="flex rounded-md border border-border bg-card p-1 text-sm">
+              {(["overview", "themes", "explorer", "ai"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`rounded px-3 py-1.5 capitalize transition ${
+                    tab === t
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t === "ai" ? "AI Insights" : t}
+                </button>
+              ))}
+            </nav>
+            <button
+              onClick={toggleTheme}
+              className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+              aria-label="Toggle theme"
+            >
+              {theme === "dark" ? "Light" : "Dark"}
+            </button>
           </div>
-          <div className="flex items-center gap-4">
-            <SpotifyIcon className="hidden h-12 w-12 shrink-0 text-primary lg:block" />
-            <h1 className="font-display text-4xl leading-[1.05] tracking-tight md:text-5xl">
-              Spotify Review <span className="italic text-primary">Analysis System</span>
-            </h1>
-          </div>
-          <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-            {agg.total.toLocaleString()} Spotify reviews from {sources.length} channels —
-            pre-classified across sentiment, topic, pain points, listener goals, behavior, and
-            product opportunities.
-          </p>
         </div>
-        <div className="flex flex-wrap gap-2 lg:hidden" />
-      </div>
+      </header>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <Stat
-          label="Total reviews"
-          value={agg.total.toLocaleString()}
-          hint={`${sources.length} sources`}
-        />
-        <Stat
-          label="Negative share"
-          value={`${negPct}%`}
-          hint={`${sentiment["Negative"] ?? 0} reviews`}
-          tone="danger"
-        />
-        <Stat
-          label="Positive share"
-          value={`${Math.round(((sentiment["Positive"] ?? 0) / agg.total) * 100)}%`}
-          hint={`${sentiment["Positive"] ?? 0} reviews`}
-          tone="success"
-        />
-        <Stat
-          label="Top topic"
-          value={topTopic ?? "—"}
-          hint="most-tagged across corpus"
-          tone="primary"
-          small
-        />
-      </div>
-    </header>
-  );
-}
+      <main className="mx-auto max-w-7xl px-6 py-8">
+        {tab === "overview" && <Overview agg={agg} />}
+        {tab === "themes" && <Themes />}
+        {tab === "explorer" && <Explorer sources={sources} />}
+        {tab === "ai" && <AIInsights sources={sources} />}
+      </main>
 
-function Stat({
-  label,
-  value,
-  hint,
-  tone = "default",
-  small = false,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  tone?: "default" | "danger" | "success" | "primary";
-  small?: boolean;
-}) {
-  const ring =
-    tone === "danger"
-      ? "from-danger/40 to-transparent"
-      : tone === "success"
-        ? "from-success/40 to-transparent"
-        : tone === "primary"
-          ? "from-primary/40 to-transparent"
-          : "from-border-strong/60 to-transparent";
-  return (
-    <div className="panel relative overflow-hidden p-4">
-      <div className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${ring}`} />
-      <div className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
-      <div
-        className={`mt-2 font-display tracking-tight ${
-          small ? "text-lg leading-snug" : "text-3xl leading-none"
-        } text-foreground`}
-      >
-        {value}
-      </div>
-      {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
+      <footer className="border-t border-border bg-sidebar">
+        <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-muted-foreground">
+          Powered by OpenRouter · claude-sonnet-4 · client-side retrieval over {agg.total} reviews
+        </div>
+      </footer>
     </div>
   );
 }
@@ -399,264 +195,183 @@ function Stat({
 // ─────────────────────────── Overview ───────────────────────────
 
 function Overview({ agg }: { agg: ReturnType<typeof aggregate> }) {
-  const keywords = useMemo(() => topKeywords(REVIEWS, 32), []);
+  const keywords = useMemo(() => topKeywords(REVIEWS, 28), []);
   const maxKw = keywords[0]?.count ?? 1;
   const sourceMax = Math.max(...Object.values(agg.bySource));
-  const ratingOrder = ["5", "4", "3", "2", "1", "n/a"];
 
   return (
-    <section className="grid gap-6 lg:grid-cols-3">
-      <Panel title="Reviews by source" subtitle="Volume & average rating" className="lg:col-span-2">
-        <div className="space-y-4">
+    <div className="grid gap-6 lg:grid-cols-3">
+      <Card title="Reviews by source" className="lg:col-span-2">
+        <div className="space-y-3">
           {Object.entries(agg.bySource)
             .sort((a, b) => b[1] - a[1])
-            .map(([source, n]) => {
-              const meta = sourceMeta(source);
-              return (
-                <div key={source}>
-                  <div className="mb-1.5 flex items-center gap-3 text-sm">
-                    <SourceDot source={source} />
-                    <span className="font-medium">{meta.label}</span>
-                    <span className="ml-auto text-muted-foreground">
-                      {n.toLocaleString()} ·{" "}
-                      <span className="text-foreground">
-                        {agg.avgBySource[source] ? `${agg.avgBySource[source]}★` : "—"}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className={`h-full ${meta.bg} opacity-90`}
-                      style={{ width: `${(n / sourceMax) * 100}%` }}
-                    />
-                  </div>
+            .map(([source, n]) => (
+              <div key={source}>
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span>{source}</span>
+                  <span className="text-muted-foreground">
+                    {n} · avg {agg.avgBySource[source] ?? "—"}★
+                  </span>
                 </div>
-              );
-            })}
+                <div className="h-2 overflow-hidden rounded bg-muted">
+                  <div
+                    className="h-full bg-primary"
+                    style={{ width: `${(n / sourceMax) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
         </div>
-      </Panel>
+      </Card>
 
-      <Panel title="Rating distribution" subtitle="Across the entire corpus">
+      <Card title="Rating distribution">
         <div className="space-y-2">
-          {ratingOrder.map((k) => {
+          {["5", "4", "3", "2", "1", "n/a"].map((k) => {
             const n = agg.byRating[k] ?? 0;
             const pct = (n / agg.total) * 100;
-            const tone =
-              k === "5" || k === "4"
-                ? "bg-success"
-                : k === "3"
-                  ? "bg-warning"
-                  : k === "n/a"
-                    ? "bg-muted-foreground/40"
-                    : "bg-danger";
             return (
               <div key={k} className="flex items-center gap-3 text-sm">
-                <span className="w-8 font-mono text-xs text-muted-foreground">
-                  {k === "n/a" ? "—" : `${k}★`}
-                </span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div className={`h-full ${tone}`} style={{ width: `${pct}%` }} />
+                <span className="w-8 text-muted-foreground">{k === "n/a" ? "—" : `${k}★`}</span>
+                <div className="h-2 flex-1 overflow-hidden rounded bg-muted">
+                  <div
+                    className={`h-full ${
+                      k === "5" || k === "4"
+                        ? "bg-success"
+                        : k === "3"
+                          ? "bg-warning"
+                          : "bg-danger"
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
                 </div>
-                <span className="w-12 text-right font-mono text-xs text-muted-foreground">
-                  {n}
-                </span>
+                <span className="w-12 text-right text-muted-foreground">{n}</span>
               </div>
             );
           })}
         </div>
-      </Panel>
+      </Card>
 
-      <Panel
-        title="Vocabulary heatmap"
-        subtitle="High-frequency terms, sized by document frequency"
-        className="lg:col-span-3"
-      >
+      <Card title="Top terms across reviews" className="lg:col-span-3">
         <div className="flex flex-wrap gap-2">
           {keywords.map((k) => {
-            const scale = 0.78 + (k.count / maxKw) * 0.9;
-            const intensity = 0.35 + (k.count / maxKw) * 0.55;
+            const scale = 0.75 + (k.count / maxKw) * 0.9;
             return (
               <span
                 key={k.term}
-                className="rounded-full border border-border bg-card px-3 py-1.5 text-foreground transition hover:border-primary/40"
-                style={{
-                  fontSize: `${scale}rem`,
-                  background: `color-mix(in oklch, var(--color-primary) ${intensity * 12}%, var(--color-card))`,
-                }}
-                title={`${k.count} reviews mention "${k.term}"`}
+                className="rounded-full border border-border bg-card px-3 py-1 text-muted-foreground"
+                style={{ fontSize: `${scale}rem` }}
+                title={`${k.count} reviews`}
               >
                 {k.term}{" "}
-                <span className="ml-1 font-mono text-[10px] text-muted-foreground">{k.count}</span>
+                <span className="text-xs opacity-60">{k.count}</span>
               </span>
             );
           })}
         </div>
-      </Panel>
-    </section>
+      </Card>
+    </div>
   );
 }
 
-function Panel({
+function Card({
   title,
-  subtitle,
   children,
   className = "",
-  action,
 }: {
   title: string;
-  subtitle?: string;
   children: React.ReactNode;
   className?: string;
-  action?: React.ReactNode;
 }) {
   return (
-    <section className={`panel p-5 ${className}`}>
-      <header className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-lg leading-tight">{title}</h2>
-          {subtitle && <p className="mt-0.5 text-xs text-muted-foreground">{subtitle}</p>}
-        </div>
-        {action}
-      </header>
+    <section className={`rounded-xl border border-border bg-card p-5 ${className}`}>
+      <h2 className="mb-4 font-display text-lg">{title}</h2>
       {children}
     </section>
   );
 }
 
-function SourceDot({ source }: { source: string }) {
-  const m = sourceMeta(source);
-  return (
-    <span
-      className={`inline-flex h-5 w-5 items-center justify-center rounded-md ${m.bg}/20 ring-1 ring-inset ring-current/30 ${m.color}`}
-      aria-hidden
-    >
-      <span className={`h-2 w-2 rounded-sm ${m.bg}`} />
-    </span>
-  );
-}
-
-// ─────────────────────────── Themes ───────────────────────────
+// ─────────────────────────── Themes (from per-review classification) ───────────────────────────
 
 function Themes() {
-  const topics = useMemo(() => countField(REVIEWS, "topic", 18), []);
-  const pains = useMemo(() => countField(REVIEWS, "pain", 18), []);
-  const goals = useMemo(() => countField(REVIEWS, "goal", 18), []);
-  const behaviors = useMemo(() => countField(REVIEWS, "behavior", 18), []);
-  const opportunities = useMemo(() => countField(REVIEWS, "opportunity", 14), []);
+  const topics = useMemo(() => countField(REVIEWS, "topic", 20), []);
+  const pains = useMemo(() => countField(REVIEWS, "pain", 20), []);
+  const goals = useMemo(() => countField(REVIEWS, "goal", 20), []);
+  const behaviors = useMemo(() => countField(REVIEWS, "behavior", 20), []);
+  const opportunities = useMemo(() => countField(REVIEWS, "opportunity", 20), []);
   const sentiment = useMemo(() => sentimentMix(REVIEWS), []);
   const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
-  const sentOrder = ["Positive", "Mixed", "Neutral", "Negative", "Unknown"];
 
   return (
-    <section className="space-y-6">
-      <Panel
-        title="Sentiment mix"
-        subtitle="Classified per review across the full corpus"
-      >
-        <div className="flex h-3 w-full overflow-hidden rounded-full">
-          {sentOrder
-            .filter((k) => sentiment[k])
-            .map((k) => {
-              const t = SENTIMENT_TONE[k] ?? SENTIMENT_TONE.Unknown;
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card title="Sentiment mix" className="lg:col-span-2">
+        <div className="flex h-3 w-full overflow-hidden rounded">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => {
+              const color =
+                k === "Positive"
+                  ? "bg-success"
+                  : k === "Negative"
+                    ? "bg-danger"
+                    : k === "Mixed"
+                      ? "bg-warning"
+                      : "bg-muted-foreground/40";
               return (
                 <div
                   key={k}
-                  className={t.dot}
-                  style={{ width: `${(sentiment[k] / sentTotal) * 100}%` }}
-                  title={`${k}: ${sentiment[k]}`}
+                  className={color}
+                  style={{ width: `${(n / sentTotal) * 100}%` }}
+                  title={`${k}: ${n}`}
                 />
               );
             })}
         </div>
-        <div className="mt-4 grid gap-2 md:grid-cols-5">
-          {sentOrder
-            .filter((k) => sentiment[k])
-            .map((k) => {
-              const t = SENTIMENT_TONE[k] ?? SENTIMENT_TONE.Unknown;
-              const pct = ((sentiment[k] / sentTotal) * 100).toFixed(0);
-              return (
-                <div
-                  key={k}
-                  className={`flex items-center gap-2 rounded-lg ${t.bg} px-3 py-2 text-xs`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${t.dot}`} />
-                  <span className={`font-medium ${t.text}`}>{k}</span>
-                  <span className="ml-auto font-mono text-muted-foreground">
-                    {sentiment[k]} · {pct}%
-                  </span>
-                </div>
-              );
-            })}
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => (
+              <span key={k}>
+                <strong className="text-foreground">{k}</strong> {n} ·{" "}
+                {((n / sentTotal) * 100).toFixed(0)}%
+              </span>
+            ))}
         </div>
-      </Panel>
+      </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <ThemeList title="Top topics" subtitle="What reviewers talk about" items={topics} accent="primary" />
-        <ThemeList
-          title="Most common pain points"
-          subtitle="Concrete frustrations surfaced"
-          items={pains}
-          accent="danger"
-        />
-        <ThemeList
-          title="User goals"
-          subtitle="What people are trying to accomplish"
-          items={goals}
-          accent="accent"
-        />
-        <ThemeList
-          title="Listening behaviors"
-          subtitle="Observed or implied usage patterns"
-          items={behaviors}
-          accent="success"
-        />
-      </div>
-
-      <ThemeList
-        title="Suggested opportunities"
-        subtitle="Product moves implied by reviewer feedback"
-        items={opportunities}
-        accent="primary"
-      />
-    </section>
+      <ThemeList title="Top topics" items={topics} />
+      <ThemeList title="Most common pain points" items={pains} />
+      <ThemeList title="User goals" items={goals} />
+      <ThemeList title="Listening behaviors" items={behaviors} />
+      <ThemeList title="Suggested opportunities" items={opportunities} className="lg:col-span-2" />
+    </div>
   );
 }
 
 function ThemeList({
   title,
-  subtitle,
   items,
-  accent = "primary",
+  className = "",
 }: {
   title: string;
-  subtitle?: string;
   items: { label: string; count: number }[];
-  accent?: "primary" | "danger" | "success" | "accent";
+  className?: string;
 }) {
   const max = items[0]?.count ?? 1;
-  const accentBg =
-    accent === "danger"
-      ? "bg-danger/70"
-      : accent === "success"
-        ? "bg-success/70"
-        : accent === "accent"
-          ? "bg-accent/70"
-          : "bg-primary/70";
   return (
-    <Panel title={title} subtitle={subtitle}>
+    <Card title={title} className={className}>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No data</p>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {items.map((it) => (
-            <div key={it.label} className="group">
+            <div key={it.label}>
               <div className="mb-1 flex items-start justify-between gap-3 text-sm">
-                <span className="leading-snug text-foreground">{it.label}</span>
-                <span className="shrink-0 font-mono text-xs text-muted-foreground">{it.count}</span>
+                <span className="leading-snug">{it.label}</span>
+                <span className="shrink-0 text-muted-foreground">{it.count}</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
                 <div
-                  className={`h-full ${accentBg} transition-all group-hover:opacity-100`}
+                  className="h-full bg-primary/70"
                   style={{ width: `${(it.count / max) * 100}%` }}
                 />
               </div>
@@ -664,17 +379,17 @@ function ThemeList({
           ))}
         </div>
       )}
-    </Panel>
+    </Card>
   );
 }
 
-// ─────────────────────────── Explorer ───────────────────────────
+
 
 function Explorer({ sources }: { sources: string[] }) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<string>("");
   const [rating, setRating] = useState<string>("");
-  const [limit, setLimit] = useState(40);
+  const [limit, setLimit] = useState(50);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -687,108 +402,58 @@ function Explorer({ sources }: { sources: string[] }) {
   }, [query, source, rating]);
 
   return (
-    <section className="space-y-5">
-      <Panel
-        title="Explore the corpus"
-        subtitle="Search the raw reviews, filter by channel or rating"
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[240px] flex-1">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-muted-foreground">
-              /
-            </span>
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setLimit(40);
-              }}
-              placeholder="Search reviews…"
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 pl-7 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
-            />
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <FilterChip
-              active={source === ""}
-              onClick={() => setSource("")}
-              label="All sources"
-            />
-            {sources.map((s) => {
-              const m = sourceMeta(s);
-              return (
-                <FilterChip
-                  key={s}
-                  active={source === s}
-                  onClick={() => setSource(source === s ? "" : s)}
-                  label={m.label}
-                  dotClass={m.bg}
-                />
-              );
-            })}
-          </div>
-          <div className="flex gap-1">
-            {["5", "4", "3", "2", "1"].map((r) => (
-              <button
-                key={r}
-                onClick={() => setRating(rating === r ? "" : r)}
-                className={`h-8 w-9 rounded-md border text-xs font-mono transition ${
-                  rating === r
-                    ? "border-primary/50 bg-primary/15 text-foreground"
-                    : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {r}★
-              </button>
-            ))}
-          </div>
-          <span className="ml-auto chip">
-            <span className="pulse-dot" />
-            {filtered.length.toLocaleString()} matches
-          </span>
-        </div>
-      </Panel>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-card p-4">
+        <input
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setLimit(50);
+          }}
+          placeholder="Search reviews…"
+          className="min-w-[220px] flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        />
+        <select
+          value={source}
+          onChange={(e) => setSource(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All sources</option>
+          {sources.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+        <select
+          value={rating}
+          onChange={(e) => setRating(e.target.value)}
+          className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+        >
+          <option value="">All ratings</option>
+          {["5", "4", "3", "2", "1"].map((r) => (
+            <option key={r} value={r}>
+              {r}★
+            </option>
+          ))}
+        </select>
+        <span className="text-sm text-muted-foreground">{filtered.length} matches</span>
+      </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="space-y-3">
         {filtered.slice(0, limit).map((r) => (
           <ReviewCard key={r.id} review={r} highlight={query} />
         ))}
+        {filtered.length > limit && (
+          <button
+            onClick={() => setLimit((n) => n + 50)}
+            className="w-full rounded-md border border-border bg-card py-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            Load more
+          </button>
+        )}
       </div>
-
-      {filtered.length > limit && (
-        <button
-          onClick={() => setLimit((n) => n + 40)}
-          className="block w-full rounded-xl border border-border bg-card py-3 text-sm text-muted-foreground transition hover:border-primary/40 hover:text-foreground"
-        >
-          Load 40 more · {filtered.length - limit} remaining
-        </button>
-      )}
-    </section>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  label,
-  dotClass,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  dotClass?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition ${
-        active
-          ? "border-primary/50 bg-primary/15 text-foreground"
-          : "border-border bg-muted/30 text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      {dotClass && <span className={`h-2 w-2 rounded-full ${dotClass}`} />}
-      {label}
-    </button>
+    </div>
   );
 }
 
@@ -801,7 +466,7 @@ function ReviewCard({ review, highlight }: { review: Review; highlight?: string 
     const parts = text.split(re);
     body = parts.map((p, i) =>
       re.test(p) ? (
-        <mark key={i} className="bg-primary/25 text-foreground">
+        <mark key={i} className="bg-warning/30 text-foreground">
           {p}
         </mark>
       ) : (
@@ -817,34 +482,16 @@ function ReviewCard({ review, highlight }: { review: Review; highlight?: string 
         : review.rating === 3
           ? "text-warning"
           : "text-danger";
-  const sent = (review.sentiment || "Unknown").split("(")[0].trim() || "Unknown";
-  const sentTone = SENTIMENT_TONE[sent] ?? SENTIMENT_TONE.Unknown;
-
   return (
-    <article className="panel flex flex-col gap-3 p-4 text-sm transition hover:border-primary/30">
-      <header className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        <SourceDot source={review.source} />
-        <span className="font-medium text-foreground">{sourceMeta(review.source).label}</span>
-        <span className={`font-mono ${ratingColor}`}>
-          {review.rating == null ? "—" : `${review.rating}★`}
-        </span>
-        <span className={`chip ${sentTone.bg} ${sentTone.text} border-transparent`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${sentTone.dot}`} />
-          {sent}
-        </span>
-        {review.date && <span className="text-[11px] opacity-70">{review.date.slice(0, 10)}</span>}
-        <span className="ml-auto font-mono text-[10px] opacity-60">{review.id}</span>
+    <article className="rounded-lg border border-border bg-card p-4 text-sm">
+      <header className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <span className="rounded bg-muted px-2 py-0.5">{review.source}</span>
+        <span className={ratingColor}>{review.rating == null ? "—" : `${review.rating}★`}</span>
+        {review.username && <span>· {review.username}</span>}
+        {review.date && <span>· {review.date}</span>}
+        <span className="ml-auto font-mono opacity-60">{review.id.slice(0, 8)}</span>
       </header>
-      <p className="leading-relaxed text-foreground/95">{body}</p>
-      {(review.topic || review.pain) && (
-        <footer className="flex flex-wrap gap-1.5 border-t border-border pt-2 text-[11px]">
-          {review.topic && <span className="chip">topic · {review.topic}</span>}
-          {review.pain && (
-            <span className="chip border-danger/30 bg-danger/10 text-danger">pain · {review.pain}</span>
-          )}
-          {review.goal && <span className="chip">goal · {review.goal}</span>}
-        </footer>
-      )}
+      <p className="leading-relaxed">{body}</p>
     </article>
   );
 }
@@ -865,6 +512,7 @@ function AIInsights({ sources }: { sources: string[] }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [filterSource, setFilterSource] = useState<string>("");
 
+  // Full analysis state
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number; current: string }>({
     done: 0,
@@ -948,7 +596,6 @@ ${contextLines.join("\n")}`;
     if (!q.trim() || loading || running) return;
     setLoading(true);
     setInsight(null);
-    setReport(null);
     const pool = filterSource ? REVIEWS.filter((r) => r.source === filterSource) : REVIEWS;
     const ins = await analyzeQuestion(q, pool);
     setInsight(ins);
@@ -968,9 +615,11 @@ ${contextLines.join("\n")}`;
       setProgress({ done: i, total: SUGGESTED_QUESTIONS.length + 1, current: q });
       const ins = await analyzeQuestion(q, pool);
       insights.push(ins);
+      // partial render so user sees progress
       setReport({ insights: [...insights], summary: "" });
     }
 
+    // Executive summary pass
     setProgress({
       done: SUGGESTED_QUESTIONS.length,
       total: SUGGESTED_QUESTIONS.length + 1,
@@ -1020,17 +669,16 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[1fr_340px]">
-      <div className="space-y-5">
-        <Panel
-          title="Ask the reviews"
-          subtitle="Natural-language research grounded in the corpus, with [ID] citations"
-          action={
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="space-y-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="mb-3 flex items-center gap-3">
+            <h2 className="font-display text-lg">Ask the reviews</h2>
             <select
               value={filterSource}
               onChange={(e) => setFilterSource(e.target.value)}
               disabled={running}
-              className="rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
+              className="ml-auto rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
             >
               <option value="">All sources</option>
               {sources.map((s) => (
@@ -1039,71 +687,65 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
                 </option>
               ))}
             </select>
-          }
-        >
-          <div className="flex flex-col gap-3 md:flex-row">
-            <div className="relative flex-1">
-              <textarea
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(question);
-                }}
-                placeholder="e.g. What causes users to repeatedly listen to the same content?"
-                disabled={running}
-                rows={2}
-                className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-primary/20 disabled:opacity-50"
-              />
-              <span className="absolute bottom-2 right-3 font-mono text-[10px] text-muted-foreground">
-                ⌘↵ to analyze
-              </span>
-            </div>
-            <div className="flex gap-2 md:flex-col">
-              <button
-                onClick={() => ask(question)}
-                disabled={loading || running || !question.trim()}
-                className="flex-1 rounded-xl bg-gradient-to-br from-primary to-primary-glow px-5 py-3 text-sm font-medium text-primary-foreground shadow-lg shadow-primary/20 transition hover:shadow-primary/40 disabled:opacity-50"
-              >
-                {loading ? "Analyzing…" : "Analyze"}
-              </button>
-              <button
-                onClick={runFullAnalysis}
-                disabled={loading || running}
-                className="flex-1 rounded-xl border border-accent/40 bg-accent/10 px-5 py-3 text-sm font-medium text-accent transition hover:bg-accent/20 disabled:opacity-50"
-              >
-                {running ? "Running…" : "Full Analysis"}
-              </button>
-            </div>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") ask(question);
+              }}
+              placeholder="e.g. What are the most common frustrations with recommendations?"
+              disabled={running}
+              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+            />
+            <button
+              onClick={() => ask(question)}
+              disabled={loading || running || !question.trim()}
+              className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+            >
+              {loading ? "Analyzing…" : "Analyze"}
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
+            <button
+              onClick={runFullAnalysis}
+              disabled={loading || running}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
+            >
+              {running ? "Running full analysis…" : "Run Full Analysis"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Runs all {SUGGESTED_QUESTIONS.length} core questions sequentially, then synthesizes an
+              executive summary.
+            </p>
           </div>
           {running && (
-            <div className="mt-4">
-              <div className="mb-1.5 flex justify-between text-xs text-muted-foreground">
-                <span className="truncate pr-3">{progress.current}</span>
-                <span className="font-mono">
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+                <span>{progress.current}</span>
+                <span>
                   {progress.done}/{progress.total}
                 </span>
               </div>
-              <div className="h-1 overflow-hidden rounded-full bg-muted">
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
                 <div
-                  className="h-full bg-gradient-to-r from-primary to-accent transition-all"
+                  className="h-full bg-accent transition-all"
                   style={{ width: `${(progress.done / progress.total) * 100}%` }}
                 />
               </div>
             </div>
           )}
-        </Panel>
+        </div>
 
         {insight && !report && <InsightCard insight={insight} />}
 
         {report && (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {(report.summary || report.summaryError) && (
-              <div className="panel panel-glow p-6">
-                <div className="mb-3 flex items-center gap-2">
-                  <span className="pulse-dot" />
-                  <span className="text-[11px] uppercase tracking-[0.18em] text-primary-glow">
-                    Executive summary
-                  </span>
+              <div className="rounded-xl border border-accent/40 bg-accent/5 p-5">
+                <div className="mb-2 text-xs uppercase tracking-wide text-accent">
+                  Executive summary
                 </div>
                 {report.summaryError ? (
                   <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
@@ -1122,9 +764,10 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
       </div>
 
       <aside className="space-y-4">
-        <Panel title="Core research questions" subtitle="Click to run a single analysis">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <h3 className="mb-3 font-display text-base">Core questions</h3>
           <div className="space-y-2">
-            {SUGGESTED_QUESTIONS.map((q, i) => (
+            {SUGGESTED_QUESTIONS.map((q) => (
               <button
                 key={q}
                 onClick={() => {
@@ -1132,41 +775,31 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
                   ask(q);
                 }}
                 disabled={loading || running}
-                className="group block w-full rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-left text-sm text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-foreground disabled:opacity-50"
+                className="block w-full rounded-md border border-border bg-background px-3 py-2 text-left text-sm text-muted-foreground hover:border-primary/60 hover:text-foreground disabled:opacity-50"
               >
-                <div className="flex items-start gap-2.5">
-                  <span className="mt-0.5 font-mono text-[10px] text-primary/70">
-                    Q{String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span className="leading-snug group-hover:text-foreground">{q}</span>
-                </div>
+                {q}
               </button>
             ))}
           </div>
-        </Panel>
-        <div className="panel p-4 text-xs leading-relaxed text-muted-foreground">
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
           <div className="mb-1 font-medium text-foreground">How it works</div>
           Each question retrieves the top ~60 most-relevant reviews from {REVIEWS.length} total and
-          sends them to claude-sonnet-4 with their classification tags. Full Analysis runs all core
-          questions and synthesizes an executive summary.
+          sends them to claude-sonnet-4 via OpenRouter. Full Analysis runs all core questions and
+          adds an executive summary across them.
         </div>
       </aside>
-    </section>
+    </div>
   );
 }
 
 function InsightCard({ insight, index }: { insight: Insight; index?: number }) {
   return (
-    <div className="panel p-6">
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <span className="font-mono text-primary">
-          {index ? `Q${String(index).padStart(2, "0")}` : "Q"}
-        </span>
-        <span className="text-muted-foreground">·</span>
-        <span className="font-medium text-foreground">{insight.question}</span>
-        {insight.contextSize > 0 && (
-          <span className="ml-auto chip">{insight.contextSize} reviews in context</span>
-        )}
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-2 text-xs text-muted-foreground">
+        {index ? `Q${index} · ` : "Q · "}
+        {insight.question}
+        {insight.contextSize > 0 && ` · ${insight.contextSize} reviews in context`}
       </div>
       {insight.error ? (
         <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
@@ -1180,7 +813,7 @@ function InsightCard({ insight, index }: { insight: Insight; index?: number }) {
               <summary className="cursor-pointer text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground">
                 Cited reviews ({insight.citedIds.length})
               </summary>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <div className="mt-3 space-y-2">
                 {insight.citedIds.map((id) => {
                   const r = REVIEWS.find((x) => x.id === id);
                   if (!r) return null;
@@ -1195,7 +828,7 @@ function InsightCard({ insight, index }: { insight: Insight; index?: number }) {
   );
 }
 
-// Minimal markdown-ish renderer
+// Minimal markdown-ish renderer: headings, bullets, bold, code-ids
 function Markdownish({ text }: { text: string }) {
   const lines = text.split("\n");
   const out: React.ReactNode[] = [];
@@ -1223,7 +856,7 @@ function Markdownish({ text }: { text: string }) {
           ? "font-display text-xl mt-4 mb-2"
           : level === 2
             ? "font-display text-lg mt-4 mb-2"
-            : "font-medium mt-3 mb-1 text-foreground";
+            : "font-medium mt-3 mb-1";
       out.push(
         <div key={i} className={cls}>
           {renderInline(content)}
@@ -1247,6 +880,7 @@ function Markdownish({ text }: { text: string }) {
 }
 
 function renderInline(s: string): React.ReactNode {
+  // bold **x**, code `x`, ids [XYZ]
   const parts: React.ReactNode[] = [];
   const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[A-Za-z0-9\-]{4,}\])/g;
   let last = 0;
@@ -1271,7 +905,7 @@ function renderInline(s: string): React.ReactNode {
       parts.push(
         <span
           key={key++}
-          className="rounded bg-primary/15 px-1.5 font-mono text-[11px] text-primary"
+          className="rounded bg-primary/15 px-1 font-mono text-xs text-primary"
         >
           {tok.slice(1, -1)}
         </span>,
@@ -1283,4 +917,5 @@ function renderInline(s: string): React.ReactNode {
   return parts;
 }
 
+// Force re-import-side effect for useEffect (no-op kept for HMR friendliness)
 void useEffect;
