@@ -365,14 +365,41 @@ function Card({
 
 // ─────────────────────────── Themes (from per-review classification) ───────────────────────────
 
+function useLivePool() {
+  const total = REVIEWS.length;
+  // Shuffle once so the stream order feels organic but stable per session
+  const order = useMemo(() => {
+    const arr = REVIEWS.map((_, i) => i);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, []);
+  const [ingested, setIngested] = useState(() => Math.floor(total * 0.45));
+  useEffect(() => {
+    const id = setInterval(() => {
+      setIngested((n) => {
+        if (n >= total) return Math.floor(total * 0.45); // loop for continuous demo
+        return Math.min(total, n + 1 + Math.floor(Math.random() * 3));
+      });
+    }, 1500);
+    return () => clearInterval(id);
+  }, [total]);
+  const pool = useMemo(() => order.slice(0, ingested).map((i) => REVIEWS[i]), [order, ingested]);
+  return { pool, ingested, total };
+}
+
 function Themes() {
-  const topics = useMemo(() => countField(REVIEWS, "topic", 20), []);
-  const pains = useMemo(() => countField(REVIEWS, "pain", 20), []);
-  const goals = useMemo(() => countField(REVIEWS, "goal", 20), []);
-  const behaviors = useMemo(() => countField(REVIEWS, "behavior", 20), []);
-  const opportunities = useMemo(() => countField(REVIEWS, "opportunity", 20), []);
-  const sentiment = useMemo(() => sentimentMix(REVIEWS), []);
+  const { pool, ingested, total } = useLivePool();
+  const topics = useMemo(() => countField(pool, "topic", 20), [pool]);
+  const pains = useMemo(() => countField(pool, "pain", 20), [pool]);
+  const goals = useMemo(() => countField(pool, "goal", 20), [pool]);
+  const behaviors = useMemo(() => countField(pool, "behavior", 20), [pool]);
+  const opportunities = useMemo(() => countField(pool, "opportunity", 20), [pool]);
+  const sentiment = useMemo(() => sentimentMix(pool), [pool]);
   const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
+
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
