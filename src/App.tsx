@@ -400,6 +400,9 @@ function Themes() {
   const goals = useMemo(() => countField(pool, "goal", 20), [pool]);
   const behaviors = useMemo(() => countField(pool, "behavior", 20), [pool]);
   const opportunities = useMemo(() => countField(pool, "opportunity", 20), [pool]);
+  const rootCauses = useMemo(() => countField(pool, "rootCause", 20), [pool]);
+  const personas = useMemo(() => countField(pool, "persona", 20), [pool]);
+  const unmetNeeds = useMemo(() => countField(pool, "unmetNeed", 20), [pool]);
   const sentiment = useMemo(() => sentimentMix(pool), [pool]);
   const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
 
