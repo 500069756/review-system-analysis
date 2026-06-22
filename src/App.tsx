@@ -184,6 +184,7 @@ export default function App() {
         <Sidebar tab={tab} setTab={setTab} theme={theme} toggle={toggleTheme} />
         <main className="flex-1 space-y-8 pb-12">
           <TopHero agg={agg} negPct={negPct} topTopic={topTopic?.label} sentiment={sentiment} />
+          <MobileTabs tab={tab} setTab={setTab} />
           {tab === "overview" && <Overview agg={agg} />}
           {tab === "themes" && <Themes />}
           {tab === "explorer" && <Explorer sources={sources} />}
@@ -191,6 +192,29 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+function MobileTabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  return (
+    <nav className="panel flex gap-1 overflow-x-auto p-1.5 lg:hidden">
+      {TABS.map((t) => {
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`shrink-0 rounded-lg px-3 py-2 text-xs font-medium transition ${
+              active
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
