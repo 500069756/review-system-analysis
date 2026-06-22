@@ -10,6 +10,12 @@ type Review = {
   text: string;
   date: string | null;
   username?: string | null;
+  sentiment?: string;
+  topic?: string;
+  pain?: string;
+  goal?: string;
+  behavior?: string;
+  opportunity?: string;
 };
 
 const REVIEWS = reviewsData as Review[];
@@ -100,9 +106,31 @@ function topKeywords(pool: Review[], n = 30): { term: string; count: number }[] 
     .slice(0, n);
 }
 
+function countField(pool: Review[], field: keyof Review, n = 20) {
+  const counts: Record<string, number> = {};
+  for (const r of pool) {
+    const v = (r[field] as string | undefined)?.trim();
+    if (!v) continue;
+    counts[v] = (counts[v] ?? 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
+}
+
+function sentimentMix(pool: Review[]) {
+  const m: Record<string, number> = {};
+  for (const r of pool) {
+    const s = (r.sentiment || "Unknown").split("(")[0].trim() || "Unknown";
+    m[s] = (m[s] ?? 0) + 1;
+  }
+  return m;
+}
+
 // ─────────────────────────── UI ───────────────────────────
 
-type Tab = "overview" | "explorer" | "ai";
+type Tab = "overview" | "themes" | "explorer" | "ai";
 
 export default function App() {
   const { theme, toggle: toggleTheme } = useTheme();
@@ -118,12 +146,12 @@ export default function App() {
           <div>
             <div className="font-display text-2xl leading-none">Review Intelligence</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {agg.total.toLocaleString()} reviews · {sources.length} sources · AI-powered analysis
+              {agg.total.toLocaleString()} reviews · {sources.length} sources · pre-classified across 6 dimensions
             </div>
           </div>
           <div className="flex items-center gap-2">
             <nav className="flex rounded-md border border-border bg-card p-1 text-sm">
-              {(["overview", "explorer", "ai"] as const).map((t) => (
+              {(["overview", "themes", "explorer", "ai"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -150,6 +178,7 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         {tab === "overview" && <Overview agg={agg} />}
+        {tab === "themes" && <Themes />}
         {tab === "explorer" && <Explorer sources={sources} />}
         {tab === "ai" && <AIInsights sources={sources} />}
       </main>
@@ -261,7 +290,100 @@ function Card({
   );
 }
 
-// ─────────────────────────── Explorer ───────────────────────────
+// ─────────────────────────── Themes (from per-review classification) ───────────────────────────
+
+function Themes() {
+  const topics = useMemo(() => countField(REVIEWS, "topic", 20), []);
+  const pains = useMemo(() => countField(REVIEWS, "pain", 20), []);
+  const goals = useMemo(() => countField(REVIEWS, "goal", 20), []);
+  const behaviors = useMemo(() => countField(REVIEWS, "behavior", 20), []);
+  const opportunities = useMemo(() => countField(REVIEWS, "opportunity", 20), []);
+  const sentiment = useMemo(() => sentimentMix(REVIEWS), []);
+  const sentTotal = Object.values(sentiment).reduce((a, b) => a + b, 0) || 1;
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card title="Sentiment mix" className="lg:col-span-2">
+        <div className="flex h-3 w-full overflow-hidden rounded">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => {
+              const color =
+                k === "Positive"
+                  ? "bg-success"
+                  : k === "Negative"
+                    ? "bg-danger"
+                    : k === "Mixed"
+                      ? "bg-warning"
+                      : "bg-muted-foreground/40";
+              return (
+                <div
+                  key={k}
+                  className={color}
+                  style={{ width: `${(n / sentTotal) * 100}%` }}
+                  title={`${k}: ${n}`}
+                />
+              );
+            })}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-3 text-xs text-muted-foreground">
+          {Object.entries(sentiment)
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, n]) => (
+              <span key={k}>
+                <strong className="text-foreground">{k}</strong> {n} ·{" "}
+                {((n / sentTotal) * 100).toFixed(0)}%
+              </span>
+            ))}
+        </div>
+      </Card>
+
+      <ThemeList title="Top topics" items={topics} />
+      <ThemeList title="Most common pain points" items={pains} />
+      <ThemeList title="User goals" items={goals} />
+      <ThemeList title="Listening behaviors" items={behaviors} />
+      <ThemeList title="Suggested opportunities" items={opportunities} className="lg:col-span-2" />
+    </div>
+  );
+}
+
+function ThemeList({
+  title,
+  items,
+  className = "",
+}: {
+  title: string;
+  items: { label: string; count: number }[];
+  className?: string;
+}) {
+  const max = items[0]?.count ?? 1;
+  return (
+    <Card title={title} className={className}>
+      {items.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No data</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => (
+            <div key={it.label}>
+              <div className="mb-1 flex items-start justify-between gap-3 text-sm">
+                <span className="leading-snug">{it.label}</span>
+                <span className="shrink-0 text-muted-foreground">{it.count}</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
+                <div
+                  className="h-full bg-primary/70"
+                  style={{ width: `${(it.count / max) * 100}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+
 
 function Explorer({ sources }: { sources: string[] }) {
   const [query, setQuery] = useState("");
@@ -406,10 +528,18 @@ function AIInsights({ sources }: { sources: string[] }) {
   async function analyzeQuestion(q: string, pool: Review[]): Promise<Insight> {
     const top = retrieveRelevant(q, pool, 60);
     const agg = aggregate(pool);
-    const contextLines = top.map(
-      ({ review }) =>
-        `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) ${review.text.slice(0, 600)}`,
-    );
+    const contextLines = top.map(({ review }) => {
+      const tags = [
+        review.sentiment && `sent:${review.sentiment}`,
+        review.topic && `topic:${review.topic}`,
+        review.pain && `pain:${review.pain}`,
+        review.goal && `goal:${review.goal}`,
+        review.behavior && `behavior:${review.behavior}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      return `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) {${tags}} ${review.text.slice(0, 500)}`;
+    });
     const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
 You will be given a question and a sample of real user reviews (most-relevant first), plus aggregate statistics.
 Your job:
@@ -418,13 +548,19 @@ Your job:
 - When you make a claim, cite supporting reviews by their bracketed ID, e.g. [AS51776]. Cite 3–8 IDs total.
 - If the sample is insufficient to answer, say so explicitly.
 - Output well-structured markdown with short headings and bullets. No preamble.`;
+    const topTopics = countField(pool, "topic", 10);
+    const topPains = countField(pool, "pain", 10);
+    const sentiment = sentimentMix(pool);
     const user = `Question: ${q}
 
 Dataset scope: ${agg.total} reviews across ${Object.keys(agg.bySource).join(", ")}.
 Rating distribution: ${JSON.stringify(agg.byRating)}.
 Avg rating by source: ${JSON.stringify(agg.avgBySource)}.
+Sentiment mix: ${JSON.stringify(sentiment)}.
+Top topics (pre-classified): ${topTopics.map((t) => `${t.label} (${t.count})`).join("; ")}.
+Top pain points (pre-classified): ${topPains.map((t) => `${t.label} (${t.count})`).join("; ")}.
 
-Most relevant reviews (id, source, rating, text):
+Most relevant reviews (id, source, rating, {classification tags}, text):
 ${contextLines.join("\n")}`;
     try {
       const res = await chatCompletion({
