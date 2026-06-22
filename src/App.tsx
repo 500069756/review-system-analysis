@@ -105,7 +105,7 @@ function topKeywords(pool: Review[], n = 30): { term: string; count: number }[] 
 type Tab = "overview" | "explorer" | "ai";
 
 export default function App() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [tab, setTab] = useState<Tab>("overview");
 
   const agg = useMemo(() => aggregate(REVIEWS), []);
