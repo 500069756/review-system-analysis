@@ -178,6 +178,7 @@ export default function App() {
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         {tab === "overview" && <Overview agg={agg} />}
+        {tab === "themes" && <Themes />}
         {tab === "explorer" && <Explorer sources={sources} />}
         {tab === "ai" && <AIInsights sources={sources} />}
       </main>
