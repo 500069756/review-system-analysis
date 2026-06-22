@@ -261,7 +261,7 @@ export default function App() {
 
       <footer className="border-t border-border bg-sidebar">
         <div className="mx-auto max-w-7xl px-6 py-4 text-xs text-muted-foreground">
-          Powered by Groq · llama-3.3-70b-versatile · client-side retrieval over {agg.total} reviews
+          Powered by Groq · llama-3.1-8b-instant · client-side retrieval over {agg.total} reviews
         </div>
       </footer>
     </div>
@@ -663,7 +663,9 @@ function AIInsights({ sources }: { sources: string[] }) {
   } | null>(null);
 
   async function analyzeQuestion(q: string, pool: Review[]): Promise<Insight> {
-    const top = retrieveRelevant(q, pool, 60);
+    // Cap at 40 most-relevant reviews to stay under Groq TPM limits.
+    const top = retrieveRelevant(q, pool, 40);
+
     const agg = aggregate(pool);
     const contextLines = top.map(({ review }) => {
       const tags = [
@@ -675,7 +677,7 @@ function AIInsights({ sources }: { sources: string[] }) {
       ]
         .filter(Boolean)
         .join(" | ");
-      return `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) {${tags}} ${review.text.slice(0, 500)}`;
+      return `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) {${tags}} ${review.text.slice(0, 220)}`;
     });
     const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
 You will be given a question and a sample of real user reviews (most-relevant first), plus aggregate statistics.
@@ -705,8 +707,9 @@ ${contextLines.join("\n")}`;
           { role: "system", content: system },
           { role: "user", content: user },
         ],
-        max_tokens: 1800,
+        max_tokens: 600,
         temperature: 0.3,
+
       });
       const answer: string = res?.choices?.[0]?.message?.content ?? "";
       const cited = Array.from(
@@ -789,8 +792,9 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
           },
           { role: "user", content: summaryUser },
         ],
-        max_tokens: 1500,
+        max_tokens: 600,
         temperature: 0.3,
+
       });
       summary = res?.choices?.[0]?.message?.content ?? "";
     } catch (e) {
@@ -921,8 +925,8 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
         </div>
         <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
           <div className="mb-1 font-medium text-foreground">How it works</div>
-          Each question retrieves the top ~60 most-relevant reviews from {REVIEWS.length} total and
-          sends them to llama-3.3-70b-versatile via Groq. Full Analysis runs all core questions and
+          Each question retrieves the top ~40 most-relevant reviews from {REVIEWS.length} total and
+          sends them to llama-3.1-8b-instant via Groq. Full Analysis runs all core questions and
           adds an executive summary across them.
         </div>
       </aside>
