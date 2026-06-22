@@ -922,7 +922,7 @@ ${ins.error ? `(error: ${ins.error})` : ins.answer}`,
         <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
           <div className="mb-1 font-medium text-foreground">How it works</div>
           Each question retrieves the top ~60 most-relevant reviews from {REVIEWS.length} total and
-          sends them to claude-sonnet-4 via OpenRouter. Full Analysis runs all core questions and
+          sends them to llama-3.3-70b-versatile via Groq. Full Analysis runs all core questions and
           adds an executive summary across them.
         </div>
       </aside>
