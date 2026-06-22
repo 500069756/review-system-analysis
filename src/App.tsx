@@ -390,23 +390,27 @@ function AIInsights({ sources }: { sources: string[] }) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [filterSource, setFilterSource] = useState<string>("");
 
-  async function ask(q: string) {
-    if (!q.trim() || loading) return;
-    setLoading(true);
-    setInsight(null);
-    try {
-      const pool = filterSource
-        ? REVIEWS.filter((r) => r.source === filterSource)
-        : REVIEWS;
-      const top = retrieveRelevant(q, pool, 60);
-      const agg = aggregate(pool);
+  // Full analysis state
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number; current: string }>({
+    done: 0,
+    total: 0,
+    current: "",
+  });
+  const [report, setReport] = useState<{
+    insights: Insight[];
+    summary: string;
+    summaryError?: string;
+  } | null>(null);
 
-      const contextLines = top.map(
-        ({ review }) =>
-          `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) ${review.text.slice(0, 600)}`,
-      );
-
-      const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
+  async function analyzeQuestion(q: string, pool: Review[]): Promise<Insight> {
+    const top = retrieveRelevant(q, pool, 60);
+    const agg = aggregate(pool);
+    const contextLines = top.map(
+      ({ review }) =>
+        `[${review.id}] (${review.source}, ${review.rating ?? "—"}★) ${review.text.slice(0, 600)}`,
+    );
+    const system = `You are a senior product researcher analyzing user feedback for a music streaming product.
 You will be given a question and a sample of real user reviews (most-relevant first), plus aggregate statistics.
 Your job:
 - Synthesize a clear, evidence-based answer to the question.
@@ -414,8 +418,7 @@ Your job:
 - When you make a claim, cite supporting reviews by their bracketed ID, e.g. [AS51776]. Cite 3–8 IDs total.
 - If the sample is insufficient to answer, say so explicitly.
 - Output well-structured markdown with short headings and bullets. No preamble.`;
-
-      const user = `Question: ${q}
+    const user = `Question: ${q}
 
 Dataset scope: ${agg.total} reviews across ${Object.keys(agg.bySource).join(", ")}.
 Rating distribution: ${JSON.stringify(agg.byRating)}.
@@ -423,7 +426,7 @@ Avg rating by source: ${JSON.stringify(agg.avgBySource)}.
 
 Most relevant reviews (id, source, rating, text):
 ${contextLines.join("\n")}`;
-
+    try {
       const res = await chatCompletion({
         messages: [
           { role: "system", content: system },
@@ -432,30 +435,101 @@ ${contextLines.join("\n")}`;
         max_tokens: 1800,
         temperature: 0.3,
       });
-
       const answer: string = res?.choices?.[0]?.message?.content ?? "";
       const cited = Array.from(
-        new Set(
-          (answer.match(/\[([A-Za-z0-9\-]{4,})\]/g) ?? []).map((m) => m.slice(1, -1)),
-        ),
+        new Set((answer.match(/\[([A-Za-z0-9\-]{4,})\]/g) ?? []).map((m) => m.slice(1, -1))),
       );
-      setInsight({
+      return {
         question: q,
         answer: answer || "(empty response)",
         citedIds: cited,
         contextSize: top.length,
-      });
+      };
     } catch (e) {
-      setInsight({
+      return {
         question: q,
         answer: "",
         citedIds: [],
         contextSize: 0,
         error: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setLoading(false);
+      };
     }
+  }
+
+  async function ask(q: string) {
+    if (!q.trim() || loading || running) return;
+    setLoading(true);
+    setInsight(null);
+    const pool = filterSource ? REVIEWS.filter((r) => r.source === filterSource) : REVIEWS;
+    const ins = await analyzeQuestion(q, pool);
+    setInsight(ins);
+    setLoading(false);
+  }
+
+  async function runFullAnalysis() {
+    if (running || loading) return;
+    setRunning(true);
+    setReport(null);
+    setInsight(null);
+    const pool = filterSource ? REVIEWS.filter((r) => r.source === filterSource) : REVIEWS;
+    const insights: Insight[] = [];
+    setProgress({ done: 0, total: SUGGESTED_QUESTIONS.length + 1, current: SUGGESTED_QUESTIONS[0] });
+    for (let i = 0; i < SUGGESTED_QUESTIONS.length; i++) {
+      const q = SUGGESTED_QUESTIONS[i];
+      setProgress({ done: i, total: SUGGESTED_QUESTIONS.length + 1, current: q });
+      const ins = await analyzeQuestion(q, pool);
+      insights.push(ins);
+      // partial render so user sees progress
+      setReport({ insights: [...insights], summary: "" });
+    }
+
+    // Executive summary pass
+    setProgress({
+      done: SUGGESTED_QUESTIONS.length,
+      total: SUGGESTED_QUESTIONS.length + 1,
+      current: "Synthesizing executive summary",
+    });
+    const summaryUser = `You previously answered these research questions over the same review dataset.
+Synthesize a concise executive summary (markdown) with:
+- **Top themes** (3–5 bullets)
+- **Most acute pain points** (3–5 bullets)
+- **Unmet needs / opportunities** (3–5 bullets)
+- **Recommended next research** (2–3 bullets)
+Reference review IDs in [BRACKETS] only when they directly support a point. No preamble.
+
+---
+${insights
+  .map(
+    (ins) => `### ${ins.question}
+${ins.error ? `(error: ${ins.error})` : ins.answer}`,
+  )
+  .join("\n\n")}`;
+    let summary = "";
+    let summaryError: string | undefined;
+    try {
+      const res = await chatCompletion({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a senior product researcher producing a tight executive summary from prior analyses. Be specific and concrete.",
+          },
+          { role: "user", content: summaryUser },
+        ],
+        max_tokens: 1500,
+        temperature: 0.3,
+      });
+      summary = res?.choices?.[0]?.message?.content ?? "";
+    } catch (e) {
+      summaryError = e instanceof Error ? e.message : String(e);
+    }
+    setReport({ insights, summary, summaryError });
+    setProgress({
+      done: SUGGESTED_QUESTIONS.length + 1,
+      total: SUGGESTED_QUESTIONS.length + 1,
+      current: "Done",
+    });
+    setRunning(false);
   }
 
   return (
@@ -467,7 +541,8 @@ ${contextLines.join("\n")}`;
             <select
               value={filterSource}
               onChange={(e) => setFilterSource(e.target.value)}
-              className="ml-auto rounded-md border border-border bg-background px-2 py-1 text-xs"
+              disabled={running}
+              className="ml-auto rounded-md border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
             >
               <option value="">All sources</option>
               {sources.map((s) => (
@@ -485,58 +560,76 @@ ${contextLines.join("\n")}`;
                 if (e.key === "Enter") ask(question);
               }}
               placeholder="e.g. What are the most common frustrations with recommendations?"
-              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+              disabled={running}
+              className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             />
             <button
               onClick={() => ask(question)}
-              disabled={loading || !question.trim()}
+              disabled={loading || running || !question.trim()}
               className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
               {loading ? "Analyzing…" : "Analyze"}
             </button>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Retrieves the most relevant reviews from the dataset and sends them to the model with
-            aggregate stats. Answers cite review IDs.
-          </p>
+          <div className="mt-3 flex items-center gap-3 border-t border-border pt-3">
+            <button
+              onClick={runFullAnalysis}
+              disabled={loading || running}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground disabled:opacity-50"
+            >
+              {running ? "Running full analysis…" : "Run Full Analysis"}
+            </button>
+            <p className="text-xs text-muted-foreground">
+              Runs all {SUGGESTED_QUESTIONS.length} core questions sequentially, then synthesizes an
+              executive summary.
+            </p>
+          </div>
+          {running && (
+            <div className="mt-3">
+              <div className="mb-1 flex justify-between text-xs text-muted-foreground">
+                <span>{progress.current}</span>
+                <span>
+                  {progress.done}/{progress.total}
+                </span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded bg-muted">
+                <div
+                  className="h-full bg-accent transition-all"
+                  style={{ width: `${(progress.done / progress.total) * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
-        {insight && (
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="mb-2 text-xs text-muted-foreground">
-              Q · {insight.question}
-              {insight.contextSize > 0 && ` · ${insight.contextSize} reviews in context`}
-            </div>
-            {insight.error ? (
-              <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
-                {insight.error}
-              </div>
-            ) : (
-              <>
-                <Markdownish text={insight.answer} />
-                {insight.citedIds.length > 0 && (
-                  <div className="mt-5 border-t border-border pt-4">
-                    <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
-                      Cited reviews
-                    </div>
-                    <div className="space-y-2">
-                      {insight.citedIds.map((id) => {
-                        const r = REVIEWS.find((x) => x.id === id);
-                        if (!r) return null;
-                        return <ReviewCard key={id} review={r} />;
-                      })}
-                    </div>
+        {insight && !report && <InsightCard insight={insight} />}
+
+        {report && (
+          <div className="space-y-4">
+            {(report.summary || report.summaryError) && (
+              <div className="rounded-xl border border-accent/40 bg-accent/5 p-5">
+                <div className="mb-2 text-xs uppercase tracking-wide text-accent">
+                  Executive summary
+                </div>
+                {report.summaryError ? (
+                  <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+                    {report.summaryError}
                   </div>
+                ) : (
+                  <Markdownish text={report.summary} />
                 )}
-              </>
+              </div>
             )}
+            {report.insights.map((ins, i) => (
+              <InsightCard key={i} insight={ins} index={i + 1} />
+            ))}
           </div>
         )}
       </div>
 
       <aside className="space-y-4">
         <div className="rounded-xl border border-border bg-card p-5">
-          <h3 className="mb-3 font-display text-base">Suggested questions</h3>
+          <h3 className="mb-3 font-display text-base">Core questions</h3>
           <div className="space-y-2">
             {SUGGESTED_QUESTIONS.map((q) => (
               <button
@@ -545,7 +638,7 @@ ${contextLines.join("\n")}`;
                   setQuestion(q);
                   ask(q);
                 }}
-                disabled={loading}
+                disabled={loading || running}
                 className="block w-full rounded-md border border-border bg-background px-3 py-2 text-left text-sm text-muted-foreground hover:border-primary/60 hover:text-foreground disabled:opacity-50"
               >
                 {q}
@@ -555,11 +648,46 @@ ${contextLines.join("\n")}`;
         </div>
         <div className="rounded-xl border border-border bg-card p-5 text-xs text-muted-foreground">
           <div className="mb-1 font-medium text-foreground">How it works</div>
-          Each question is matched against all {REVIEWS.length} reviews via keyword scoring; the top
-          ~60 most-relevant reviews and aggregate stats are sent to claude-sonnet-4 via OpenRouter.
-          The model must cite review IDs, shown below the answer.
+          Each question retrieves the top ~60 most-relevant reviews from {REVIEWS.length} total and
+          sends them to claude-sonnet-4 via OpenRouter. Full Analysis runs all core questions and
+          adds an executive summary across them.
         </div>
       </aside>
+    </div>
+  );
+}
+
+function InsightCard({ insight, index }: { insight: Insight; index?: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <div className="mb-2 text-xs text-muted-foreground">
+        {index ? `Q${index} · ` : "Q · "}
+        {insight.question}
+        {insight.contextSize > 0 && ` · ${insight.contextSize} reviews in context`}
+      </div>
+      {insight.error ? (
+        <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-sm text-danger">
+          {insight.error}
+        </div>
+      ) : (
+        <>
+          <Markdownish text={insight.answer} />
+          {insight.citedIds.length > 0 && (
+            <details className="mt-5 border-t border-border pt-4">
+              <summary className="cursor-pointer text-xs uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                Cited reviews ({insight.citedIds.length})
+              </summary>
+              <div className="mt-3 space-y-2">
+                {insight.citedIds.map((id) => {
+                  const r = REVIEWS.find((x) => x.id === id);
+                  if (!r) return null;
+                  return <ReviewCard key={id} review={r} />;
+                })}
+              </div>
+            </details>
+          )}
+        </>
+      )}
     </div>
   );
 }
