@@ -3,6 +3,57 @@ import { useTheme } from "@/hooks/useTheme";
 import { chatCompletion } from "@/lib/ai";
 import reviewsData from "@/data/reviews.json";
 
+function SpotifyLogo({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 168 168" className={className} aria-hidden="true">
+      <circle cx="84" cy="84" r="84" fill="#1DB954" />
+      <path
+        fill="#000"
+        d="M122.6 117.3c-1.6 2.6-5 3.4-7.6 1.8-20.8-12.7-47-15.6-77.8-8.6-3 .7-6-1.2-6.6-4.2-.7-3 1.2-6 4.2-6.6 33.7-7.7 62.7-4.3 86 10 2.6 1.6 3.4 5 1.8 7.6zm10.3-22.9c-2 3.2-6.2 4.2-9.4 2.2-23.8-14.6-60-18.9-88.1-10.4-3.6 1.1-7.4-.9-8.5-4.5s.9-7.4 4.5-8.5c32.1-9.7 72-4.9 99.3 11.8 3.2 2 4.2 6.2 2.2 9.4zm.9-23.9C105.3 53.5 57.6 51.7 31.1 59.7c-4.3 1.3-8.8-1.1-10.1-5.4s1.1-8.8 5.4-10.1c30.4-9.2 83-7.1 115.6 12.2 3.9 2.3 5.1 7.3 2.8 11.2-2.3 3.8-7.3 5.1-11.2 2.8z"
+      />
+    </svg>
+  );
+}
+
+function useLiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return now;
+}
+
+function LiveTicker() {
+  const samples = useMemo(
+    () =>
+      [...REVIEWS]
+        .filter((r) => r.text && r.text.length < 180)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 30),
+    [],
+  );
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setIdx((i) => (i + 1) % samples.length), 3500);
+    return () => clearInterval(id);
+  }, [samples.length]);
+  const r = samples[idx];
+  if (!r) return null;
+  return (
+    <div className="flex items-center gap-3 overflow-hidden border-b border-border bg-card/50 px-6 py-2 text-xs">
+      <span className="shrink-0 rounded bg-[#1DB954]/15 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-[#1DB954]">
+        Incoming
+      </span>
+      <span className="shrink-0 text-muted-foreground">{r.source}</span>
+      <span className="shrink-0 text-muted-foreground">
+        {r.rating == null ? "—" : `${r.rating}★`}
+      </span>
+      <span className="truncate text-foreground/90">"{r.text}"</span>
+    </div>
+  );
+}
+
 type Review = {
   id: string;
   source: string;
