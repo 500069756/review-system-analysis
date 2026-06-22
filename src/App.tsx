@@ -195,14 +195,11 @@ function Sidebar({
     <aside className="sticky top-8 hidden h-[calc(100vh-4rem)] w-64 shrink-0 flex-col justify-between rounded-2xl border border-border bg-sidebar/80 p-5 backdrop-blur lg:flex">
       <div>
         <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary-glow">
-            <span className="font-display text-lg font-semibold text-primary-foreground">R</span>
-            <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-sidebar bg-accent" />
-          </div>
+          <SpotifyIcon className="h-10 w-10 text-primary" />
           <div>
-            <div className="font-display text-base leading-tight">Review</div>
+            <div className="font-display text-base font-semibold leading-tight">Spotify</div>
             <div className="font-display text-base leading-tight text-muted-foreground">
-              Intelligence
+              Review Analysis
             </div>
           </div>
         </div>
