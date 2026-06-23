@@ -194,10 +194,7 @@ export default function App() {
   const sources = useMemo(() => Object.keys(agg.bySource), [agg]);
 
   const now = useLiveClock();
-  const liveCount = useMemo(
-    () => agg.total + Math.floor((Date.now() / 60000) % 47),
-    [now.getMinutes()],
-  );
+  const liveCount = useMemo(() => 1150, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
